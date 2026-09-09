@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { FetchDogBg } from "@/components/FetchDogBg";
 import { Footer } from "@/components/Footer";
 import { Header } from "@/components/Header";
 import { site } from "@/content/site";
@@ -36,12 +37,15 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="flex min-h-full flex-col font-sans">
-        <Header />
-        <main className="mx-auto w-full max-w-6xl flex-1 px-4 pb-8 sm:px-6">
-          {children}
-        </main>
-        <Footer />
+      <body className="relative flex min-h-full flex-col font-sans">
+        <FetchDogBg />
+        <div className="relative z-10 flex min-h-full flex-1 flex-col">
+          <Header />
+          <main className="mx-auto w-full max-w-6xl flex-1 px-4 pb-8 sm:px-6">
+            {children}
+          </main>
+          <Footer />
+        </div>
       </body>
     </html>
   );

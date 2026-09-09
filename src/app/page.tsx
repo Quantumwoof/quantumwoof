@@ -1,4 +1,5 @@
 import { AboutCard } from "@/components/AboutCard";
+import { AstronomyFactCard } from "@/components/AstronomyFactCard";
 import { BentoCard } from "@/components/BentoCard";
 import { FunFacts } from "@/components/FunFacts";
 import { MiniLesson } from "@/components/MiniLesson";
@@ -25,13 +26,17 @@ export default function Home() {
         <BentoCard label="Observatory" className="md:col-span-1 lg:col-span-5">
           <SkyTonight />
         </BentoCard>
-        <BentoCard label="Curiosity drawer" className="md:col-span-1 lg:col-span-3">
-          <FunFacts />
+        <BentoCard label="Sky fact" className="md:col-span-1 lg:col-span-3">
+          <AstronomyFactCard />
         </BentoCard>
         <BentoCard label="Classroom pocket" className="md:col-span-2 lg:col-span-4">
           <MiniLesson />
         </BentoCard>
       </div>
+
+      <BentoCard label="Curiosity drawer">
+        <FunFacts />
+      </BentoCard>
 
       <BentoCard label="Field notes">
         <NotesTeaser />
