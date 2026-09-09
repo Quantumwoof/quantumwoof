@@ -1,0 +1,150 @@
+@import "tailwindcss";
+
+:root {
+  /* Deep cosmic void — cards must clearly lift off this */
+  --navy: #020617;
+  --navy-soft: #0a1224;
+  --navy-card: #1a2744;
+  /* Body text: bright slate for ana.sh-like clarity */
+  --slate: #cbd5e1;
+  /* Labels/meta: still legible on navy (was too muddy at #64748b) */
+  --slate-muted: #a8b6c8;
+  --white: #f8fafc;
+  /* Electric blue from husky eyes — vivid, not neon glare */
+  --electric: #3ecfff;
+  --electric-dim: #7dd3fc;
+  --lavender: #d4c4fd;
+  --lavender-soft: #b8a0f8;
+  /* Soft but visible edges */
+  --border: rgba(148, 163, 184, 0.34);
+  --glow: rgba(62, 207, 255, 0.2);
+  --background: var(--navy);
+  --foreground: var(--white);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-navy: var(--navy);
+  --color-navy-soft: var(--navy-soft);
+  --color-navy-card: var(--navy-card);
+  --color-slate: var(--slate);
+  --color-slate-muted: var(--slate-muted);
+  --color-electric: var(--electric);
+  --color-electric-dim: var(--electric-dim);
+  --color-lavender: var(--lavender);
+  --color-lavender-soft: var(--lavender-soft);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background:
+    radial-gradient(ellipse 80% 50% at 20% -10%, rgba(62, 207, 255, 0.1), transparent 55%),
+    radial-gradient(ellipse 60% 40% at 90% 10%, rgba(184, 160, 248, 0.08), transparent 50%),
+    radial-gradient(ellipse 50% 30% at 50% 100%, rgba(62, 207, 255, 0.05), transparent 60%),
+    var(--navy);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  min-height: 100vh;
+}
+
+::selection {
+  background: rgba(62, 207, 255, 0.32);
+  color: white;
+}
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 0.55; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.05); }
+}
+
+@keyframes float-soft {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+@keyframes wag {
+  0%, 100% { transform: rotate(-8deg); }
+  50% { transform: rotate(10deg); }
+}
+
+@keyframes twinkle {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 3s ease-in-out infinite;
+}
+
+.animate-float-soft {
+  animation: float-soft 5s ease-in-out infinite;
+}
+
+.animate-wag {
+  animation: wag 1.2s ease-in-out infinite;
+  transform-origin: left center;
+}
+
+.animate-twinkle {
+  animation: twinkle 2.4s ease-in-out infinite;
+}
+
+.bento-card {
+  background: linear-gradient(
+    165deg,
+    rgba(28, 42, 72, 0.98) 0%,
+    rgba(16, 26, 48, 0.96) 100%
+  );
+  border: 1px solid var(--border);
+  border-radius: 1.25rem;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.06) inset,
+    0 18px 50px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(8px);
+  transition: border-color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease;
+}
+
+.bento-card:hover {
+  border-color: rgba(62, 207, 255, 0.38);
+  box-shadow:
+    0 0 0 1px rgba(62, 207, 255, 0.1) inset,
+    0 18px 52px rgba(0, 0, 0, 0.42),
+    0 0 28px var(--glow);
+}
+
+.card-label {
+  font-size: 0.7rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--slate-muted);
+  font-weight: 600;
+}
+
+.prose-garden p {
+  color: var(--slate);
+  line-height: 1.7;
+}
+
+.prose-garden a {
+  color: var(--electric);
+  text-decoration: none;
+}
+
+.prose-garden a:hover {
+  text-decoration: underline;
+}
+
+/* Live status dot — clear pulse without neon bloom */
+.status-dot {
+  box-shadow: 0 0 0 2px rgba(62, 207, 255, 0.28), 0 0 10px rgba(62, 207, 255, 0.45);
+}
