@@ -22,7 +22,7 @@ export function WoofGamesTeaser() {
         <div>
           <h2 className="text-lg font-semibold text-white">Woof games</h2>
           <p className="mt-1 text-sm text-slate">
-            Optional diversions. Skip them if you came for notes — no judgment.
+            Optional diversions — country first so the sky stays honest. Skip if you came for notes.
           </p>
         </div>
         <Link

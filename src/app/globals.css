@@ -328,3 +328,90 @@ body {
     display: none;
   }
 }
+
+/* —— High sky fact banner (clouds) —— */
+.sky-fact-banner {
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.04) inset,
+    0 12px 40px rgba(0, 0, 0, 0.25);
+}
+
+.sky-cloud {
+  position: absolute;
+  border-radius: 9999px;
+  background: radial-gradient(
+    ellipse at 40% 40%,
+    rgba(248, 250, 252, 0.14),
+    rgba(148, 163, 184, 0.04) 55%,
+    transparent 70%
+  );
+  filter: blur(2px);
+  animation: sky-cloud-drift 22s ease-in-out infinite;
+}
+
+.sky-cloud-a {
+  width: 160px;
+  height: 48px;
+  left: -2%;
+  top: 8%;
+  opacity: 0.85;
+}
+
+.sky-cloud-b {
+  width: 220px;
+  height: 56px;
+  right: 4%;
+  top: -6%;
+  opacity: 0.7;
+  animation-duration: 28s;
+  animation-delay: -6s;
+}
+
+.sky-cloud-c {
+  width: 120px;
+  height: 36px;
+  left: 42%;
+  bottom: -10%;
+  opacity: 0.55;
+  animation-duration: 26s;
+  animation-delay: -12s;
+}
+
+.sky-cloud-star {
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  border-radius: 9999px;
+  background: rgba(248, 250, 252, 0.75);
+  animation: twinkle 2.8s ease-in-out infinite;
+}
+
+@keyframes sky-cloud-drift {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(12px);
+  }
+}
+
+.constellation-jump-tail {
+  transform-origin: -2.8px 0;
+  animation: wag 0.55s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sky-cloud,
+  .sky-cloud-star,
+  .constellation-jump-tail {
+    animation: none !important;
+  }
+
+  .animate-pulse-glow,
+  .animate-float-soft,
+  .animate-wag,
+  .animate-twinkle {
+    animation: none !important;
+  }
+}
