@@ -2,8 +2,6 @@
 
 import { useEffect, useState } from "react";
 
-const LAGOS_TZ = "Africa/Lagos";
-
 const moods = [
   { emoji: "🔭", label: "Skywatching", detail: "Ears up. Horizon clear enough." },
   { emoji: "📚", label: "Reading", detail: "One paper, two metaphors, zero rush." },
@@ -11,16 +9,16 @@ const moods = [
   { emoji: "✨", label: "Garden tending", detail: "Polishing notes. Leaving trails." },
 ];
 
-function formatLagosClock(date: Date): string {
+function formatUtcClock(date: Date): string {
   const base = new Intl.DateTimeFormat("en-GB", {
     weekday: "short",
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
-    timeZone: LAGOS_TZ,
+    timeZone: "UTC",
   }).format(date);
-  // Explicit WAT — avoid browser "GMT" / "GMT+1" labels
-  return `${base} WAT`;
+  // Explicit UTC — avoid browser "GMT" labels
+  return `${base} UTC`;
 }
 
 export function StatusCard() {
@@ -28,7 +26,7 @@ export function StatusCard() {
   const [now, setNow] = useState<string>("");
 
   useEffect(() => {
-    const tick = () => setNow(formatLagosClock(new Date()));
+    const tick = () => setNow(formatUtcClock(new Date()));
     tick();
     const t = setInterval(tick, 30_000);
     return () => clearInterval(t);
