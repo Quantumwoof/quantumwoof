@@ -2,8 +2,7 @@ import { site } from "@/content/site";
 
 const links = [
   { label: "X / Twitter", href: site.socials.x, hint: site.socials.handle },
-  { label: "GitHub", href: site.socials.github, hint: site.socials.handle },
-  { label: "Bluesky", href: site.socials.bluesky, hint: site.socials.handle },
+  { label: "GitHub", href: site.socials.github, hint: "Quantumwoof/quantumwoof" },
 ];
 
 export function Socials() {
@@ -11,7 +10,7 @@ export function Socials() {
     <div id="contact">
       <h2 className="text-lg font-semibold text-white">Socials & contact</h2>
       <p className="mt-1 text-sm text-slate">
-        Placeholders for now — swap URLs and email when you are ready.
+        Find Hosky on the network — tips and woofs welcome.
       </p>
       <ul className="mt-4 space-y-2">
         {links.map((l) => (

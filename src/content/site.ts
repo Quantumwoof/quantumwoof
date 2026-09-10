@@ -5,17 +5,14 @@ export const site = {
     "A personal digital garden — notes, sky-watching, and small lessons from a chill professor husky.",
   tagline: "Curious by nature. Precise by habit.",
   socials: {
-    // Swap these placeholders when you go live
-    x: "https://x.com/hosky",
-    github: "https://github.com/hosky",
-    bluesky: "https://bsky.app/profile/hosky.bsky.social",
-    handle: "@hosky",
+    x: "https://x.com/quantumwoofada",
+    github: "https://github.com/Quantumwoof/quantumwoof",
+    handle: "@quantumwoofada",
   },
   contact: {
-    // Placeholder — update before launch
     email: "hello@quantumwoof.io",
   },
-  domainNote: "quantumwoof.io (later)",
+  domainNote: "quantumwoof.io",
 };
 
 export const funFacts = [
