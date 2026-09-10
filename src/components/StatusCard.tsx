@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 
+const LAGOS_TZ = "Africa/Lagos";
+
 const moods = [
   { emoji: "🔭", label: "Skywatching", detail: "Ears up. Horizon clear enough." },
   { emoji: "📚", label: "Reading", detail: "One paper, two metaphors, zero rush." },
@@ -9,21 +11,24 @@ const moods = [
   { emoji: "✨", label: "Garden tending", detail: "Polishing notes. Leaving trails." },
 ];
 
+function formatLagosClock(date: Date): string {
+  const base = new Intl.DateTimeFormat("en-GB", {
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: LAGOS_TZ,
+  }).format(date);
+  // Explicit WAT — avoid browser "GMT" / "GMT+1" labels
+  return `${base} WAT`;
+}
+
 export function StatusCard() {
   const [idx, setIdx] = useState(0);
   const [now, setNow] = useState<string>("");
 
   useEffect(() => {
-    const tick = () => {
-      setNow(
-        new Intl.DateTimeFormat("en-GB", {
-          weekday: "short",
-          hour: "2-digit",
-          minute: "2-digit",
-          timeZoneName: "short",
-        }).format(new Date()),
-      );
-    };
+    const tick = () => setNow(formatLagosClock(new Date()));
     tick();
     const t = setInterval(tick, 30_000);
     return () => clearInterval(t);
@@ -50,7 +55,10 @@ export function StatusCard() {
         <h2 className="mt-3 text-lg font-semibold text-white">{mood.label}</h2>
         <p className="mt-1 text-sm text-slate">{mood.detail}</p>
       </div>
-      <p className="font-mono text-xs text-slate-muted">{now || "…"}</p>
+      {/* Opaque pill + z-index so decorative bg lines never strike through the clock */}
+      <p className="status-clock relative z-10 mt-1 inline-flex max-w-full items-center rounded-full border border-white/10 bg-[#121c30] px-2.5 py-1 font-mono text-xs text-slate-muted">
+        {now || "…"}
+      </p>
     </div>
   );
 }

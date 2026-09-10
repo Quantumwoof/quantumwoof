@@ -1,7 +1,8 @@
 /**
  * Curated astronomy fact bank for the garden.
- * Indexed by a deterministic 12-hour UTC slot so every visitor
+ * Indexed by a deterministic 12-hour global slot so every visitor
  * sees the same fact for the same window — no API or cron.
+ * Display copy uses WAT / local countdown; slot math stays shared.
  */
 export const astronomyFacts = [
   "One light-year is about 9.5 trillion kilometers — a long fetch, even for a determined husky.",
@@ -39,7 +40,7 @@ export type AstronomyFact = (typeof astronomyFacts)[number];
 /** Milliseconds in a 12-hour UTC window. */
 export const FACT_SLOT_MS = 12 * 60 * 60 * 1000;
 
-/** Floor-divide Unix time into 12-hour UTC slots (shared by all visitors). */
+/** Floor-divide Unix time into 12-hour slots (shared by all visitors). */
 export function getUtcFactSlot(nowMs: number = Date.now()): number {
   return Math.floor(nowMs / FACT_SLOT_MS);
 }
