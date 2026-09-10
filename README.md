@@ -46,6 +46,27 @@ Sample blog posts live in `src/content/notes.ts`.
 | `/notes` | Notes index |
 | `/notes/[slug]` | Individual note |
 
+
+## Public API (JSON)
+
+Simple App Router GET routes — curated content, no database. CORS allows public GET.
+
+| Method | Path | Response |
+|--------|------|----------|
+| `GET` | `/api/health` | `{ ok, service, time }` |
+| `GET` | `/api/sky-fact` | Current 12h-slot astronomy fact (`fact`, `slot`/`index`, `nextChangeAt`, `hoursLeft`) |
+| `GET` | `/api/tonight-stars?country=NG` | Hemisphere + tonight’s stars/constellations (default country `NG`) |
+
+Examples:
+
+```bash
+curl https://www.quantumwoof.io/api/health
+curl https://www.quantumwoof.io/api/sky-fact
+curl "https://www.quantumwoof.io/api/tonight-stars?country=NG"
+```
+
+Local: `http://localhost:3000/api/...` after `bun run dev` or `bun run start`.
+
 ## Domain later
 
 1. Update socials/email in `src/content/site.ts`
