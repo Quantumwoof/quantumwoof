@@ -1,7 +1,7 @@
 # QuantumWoof - Hosky digital garden
 
 Personal dog-garden site for **Hosky** - bento cards, live-feeling widgets, notes.
-Not a course hub. Built with **Next.js (App Router)**, **TypeScript**, and **Tailwind CSS**.
+Includes **Woof School** (open campus micro-lessons). Built with **Next.js (App Router)**, **TypeScript**, and **Tailwind CSS**.
 
 ## Run locally
 
@@ -42,9 +42,12 @@ Sample blog posts live in `src/content/notes.ts`.
 
 | Path | What |
 |------|------|
-| `/` | Garden home - about, status, sky, facts, mini lesson, notes teaser, socials, playful widget |
+| `/` | Garden home — about, status, sky fact, observatory, Sky desk / Woof School, play, socials |
+| `/school` | Woof School campus map + Nebula Sniffer progress |
+| `/school/[topic]` | Micro-lessons + tiny woof check |
 | `/notes` | Notes index |
 | `/notes/[slug]` | Individual note |
+| `/play` | Woof games |
 
 
 ## Public API (JSON)

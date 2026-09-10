@@ -1,9 +1,8 @@
 import { AboutCard } from "@/components/AboutCard";
 import { BentoCard } from "@/components/BentoCard";
 import { FunFacts } from "@/components/FunFacts";
-import { MiniLesson } from "@/components/MiniLesson";
-import { NotesTeaser } from "@/components/NotesTeaser";
 import { QuantumTail } from "@/components/QuantumTail";
+import { SkyDesk } from "@/components/SkyDesk";
 import { SkyFactBanner } from "@/components/SkyFactBanner";
 import { SkyTonight } from "@/components/SkyTonight";
 import { Socials } from "@/components/Socials";
@@ -13,7 +12,6 @@ import { WoofGamesTeaser } from "@/components/WoofGamesTeaser";
 export default function Home() {
   return (
     <div className="space-y-4">
-      {/* High sky — facts float near header / cloud layer */}
       <SkyFactBanner />
 
       <div className="grid gap-4 lg:grid-cols-12">
@@ -29,17 +27,13 @@ export default function Home() {
         <BentoCard label="Observatory" className="md:col-span-1 lg:col-span-7">
           <SkyTonight />
         </BentoCard>
-        <BentoCard label="Classroom pocket" className="md:col-span-1 lg:col-span-5">
-          <MiniLesson />
+        <BentoCard label="Curiosity drawer" className="md:col-span-1 lg:col-span-5">
+          <FunFacts />
         </BentoCard>
       </div>
 
-      <BentoCard label="Curiosity drawer">
-        <FunFacts />
-      </BentoCard>
-
-      <BentoCard label="Field notes">
-        <NotesTeaser />
+      <BentoCard label="Sky desk">
+        <SkyDesk />
       </BentoCard>
 
       <BentoCard label="Play">
