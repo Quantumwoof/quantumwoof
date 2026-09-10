@@ -38,7 +38,7 @@ export function AstronomyFactCard() {
     <div className="flex h-full flex-col justify-between gap-4">
       <div>
         <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-electric/30 bg-electric/[0.08] px-2.5 py-1 text-[0.65rem] font-semibold uppercase tracking-wider text-electric-dim">
-          Every 12h (WAT)
+          Every 12h (UTC)
         </div>
         <h2 className="text-lg font-semibold text-white">Sky fact</h2>
         <p

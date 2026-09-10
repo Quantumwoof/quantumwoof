@@ -52,7 +52,7 @@ export function SkyFactBanner() {
       <div className="relative flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
         <div className="min-w-0 flex-1">
           <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-electric/30 bg-electric/[0.08] px-2.5 py-1 text-[0.65rem] font-semibold uppercase tracking-wider text-electric-dim">
-            High sky · every 12h (WAT)
+            High sky · every 12h (UTC)
           </div>
           <p
             className="text-sm leading-relaxed text-slate sm:text-[0.95rem]"

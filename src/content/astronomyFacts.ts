@@ -2,7 +2,7 @@
  * Curated astronomy fact bank for the garden.
  * Indexed by a deterministic 12-hour global slot so every visitor
  * sees the same fact for the same window — no API or cron.
- * Display copy uses WAT / local countdown; slot math stays shared.
+ * Display copy uses UTC countdown; slot math stays shared.
  */
 export const astronomyFacts = [
   "One light-year is about 9.5 trillion kilometers — a long fetch, even for a determined husky.",
