@@ -45,7 +45,7 @@ export default async function SchoolTopicPage({ params }: Props) {
           <p className="mt-2 text-slate">{topic.blurb}</p>
           <p className="mt-4 text-sm text-slate-muted">
             Hosky has not opened this courtyard yet. Wander a ready path from the campus map —
-            Looking up, Our backyard, or Solar System.
+            nine courtyards are open, including Go outside and Missions.
           </p>
           <Link
             href="/school"

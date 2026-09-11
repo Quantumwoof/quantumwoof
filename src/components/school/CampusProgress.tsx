@@ -24,8 +24,8 @@ export function CampusProgress() {
             {woofedCount} / {totalTopics} topics woofed
           </p>
           <p className="mt-1 text-sm text-slate">
-            Hit {SNIFFER_THRESHOLD} of {totalTopics} → Certified Nebula Sniffer. Miss two if you
-            want; still a sniffer.
+            Hit {SNIFFER_THRESHOLD} of {totalTopics} → Certified Nebula Sniffer. Miss the two
+            sniff-later stubs if you want; still a sniffer.
           </p>
         </div>
         <div className="font-mono text-sm text-electric">
