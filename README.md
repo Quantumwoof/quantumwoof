@@ -59,6 +59,8 @@ Simple App Router GET routes — curated content, no database. CORS allows publi
 | `GET` | `/api/health` | `{ ok, service, time }` |
 | `GET` | `/api/sky-fact` | Current 12h-slot astronomy fact (`fact`, `slot`/`index`, `nextChangeAt`, `hoursLeft`) |
 | `GET` | `/api/tonight-stars?country=NG` | Hemisphere + tonight’s stars/constellations (default country `NG`) |
+| `GET` | `/api/wooftag/status` | Daily Wooftag bowl (`remaining`, `minted`, cap 200 UTC) |
+| `POST` | `/api/wooftag/mint` | Issue Wooftag (plaintext once; server stores hash only) |
 
 Examples:
 
@@ -69,6 +71,33 @@ curl "https://www.quantumwoof.io/api/tonight-stars?country=NG"
 ```
 
 Local: `http://localhost:3000/api/...` after `bun run dev` or `bun run start`.
+
+
+## Wooftags (Nebula Sniffer tip)
+
+On **Certified Nebula Sniffer** unlock, Hosky *issues* a Wooftag (not a Cardano send).
+
+- Format `WOOF-XXXX-XXXX-XXXX-XXXX` (~80 bits, Crockford-like alphabet, no I/L/O/U)
+- Shown once with a copy button; this browser also keeps a localStorage backup
+- Server stores **only** `SHA-256(tag + WOOFTAG_PEPPER)` — never plaintext
+- Future claim of 1B Quantumwoof: **Claim opens later**. Framed as a tip, not earnings
+- Cap: **200 new tags per UTC day**. If the bowl is full the certificate still unlocks; mint is queued until 00:00 UTC
+
+### Env (Vercel)
+
+Set in Project → Settings → Environment Variables (Production + Preview):
+
+| Variable | What |
+|----------|------|
+| `WOOFTAG_PEPPER` | Long random secret used when hashing tags |
+| `UPSTASH_REDIS_REST_URL` | Upstash Redis REST URL |
+| `UPSTASH_REDIS_REST_TOKEN` | Upstash Redis REST token |
+
+Vercel KV aliases `KV_REST_API_URL` + `KV_REST_API_TOKEN` also work.
+
+`bun run build` does **not** need these. Local `bun run dev` without Redis uses an in-memory store (lost on restart). Production without KV returns a graceful error — no silent file fallback.
+
+See `.env.example`.
 
 ## Domain later
 

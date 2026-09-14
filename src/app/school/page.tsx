@@ -101,7 +101,8 @@ export default function SchoolCampusPage() {
         />
         <p className="text-sm text-slate">
           Progress stamps live in your browser (localStorage). Clear site data and the stamps
-          reset — the sky does not mind.
+          reset — the sky does not mind. A Wooftag issued on sniffer unlock is also backed up
+          here; Hosky does not reprint lost tags.
         </p>
       </aside>
     </div>

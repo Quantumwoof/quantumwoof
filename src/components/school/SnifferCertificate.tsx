@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import { useWoofProgress } from "@/hooks/useWoofProgress";
+import { WooftagMint } from "@/components/school/WooftagMint";
 
 const NAME_KEY = "quantumwoof.woof-school.sniffer-name";
 const DATE_KEY = "quantumwoof.woof-school.sniffer-date";
@@ -106,6 +107,8 @@ export function SnifferCertificate() {
           <p className="mt-4 font-mono text-xs text-slate-muted">
             Hosky · QuantumWoof · open campus · not a boring diploma
           </p>
+
+          <WooftagMint />
         </div>
       </div>
     </section>
