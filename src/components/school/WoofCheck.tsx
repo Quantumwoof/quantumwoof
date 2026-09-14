@@ -1,16 +1,29 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import type { SchoolTopic } from "@/content/woofSchool";
+import { useGuidedPath } from "@/hooks/useGuidedPath";
 import { useWoofProgress } from "@/hooks/useWoofProgress";
+
+type NextCourtyard = {
+  slug: string;
+  title: string;
+  emoji: string;
+};
 
 type Props = {
   topic: SchoolTopic;
+  /** Tighter chrome when nested inside TopicSlides */
+  embedded?: boolean;
+  /** Guided path: offer next live courtyard after a pass */
+  nextCourtyard?: NextCourtyard | null;
 };
 
-export function WoofCheck({ topic }: Props) {
+export function WoofCheck({ topic, embedded = false, nextCourtyard = null }: Props) {
   const check = topic.woofCheck;
   const { ready, isWoofed, markWoofed } = useWoofProgress();
+  const { setGuidedCursor } = useGuidedPath();
   const already = isWoofed(topic.slug);
 
   const [picks, setPicks] = useState<Record<string, "a" | "b" | "c">>({});
@@ -28,7 +41,7 @@ export function WoofCheck({ topic }: Props) {
 
   const passAt = check.passAt;
   const allAnswered = check.questions.every((q) => picks[q.id]);
-  const passed = submitted && score >= passAt;
+  const passed = (submitted && score >= passAt) || already;
   const label = topic.courtyardLabel ?? "courtyard";
 
   function onCheck() {
@@ -47,7 +60,11 @@ export function WoofCheck({ topic }: Props) {
   }
 
   return (
-    <section className="mt-10 rounded-2xl border border-electric/25 bg-electric/[0.06] p-5 sm:p-6">
+    <section
+      className={`rounded-2xl border border-electric/25 bg-electric/[0.06] p-5 sm:p-6 ${
+        embedded ? "" : "mt-10"
+      }`}
+    >
       <p className="card-label mb-2">Tiny woof check</p>
       <h2 className="text-lg font-semibold text-white">
         {passAt} of {check.questions.length} = this {label} is woofed
@@ -114,15 +131,15 @@ export function WoofCheck({ topic }: Props) {
           <>
             <p
               className={`text-sm font-medium ${
-                passed ? "text-electric" : "text-lavender"
+                score >= passAt ? "text-electric" : "text-lavender"
               }`}
             >
               {score} / {check.questions.length}
-              {passed
+              {score >= passAt
                 ? ` — ${label} woofed. Good sniff.`
                 : " — not yet. Re-read the lessons and try again."}
             </p>
-            {!passed ? (
+            {score < passAt ? (
               <button
                 type="button"
                 onClick={onRetry}
@@ -134,6 +151,22 @@ export function WoofCheck({ topic }: Props) {
           </>
         )}
       </div>
+
+      {passed && nextCourtyard ? (
+        <div className="mt-5 rounded-xl border border-electric/30 bg-electric/[0.08] p-4">
+          <p className="text-sm text-slate">
+            Courtyard woofed. Hosky’s next stop on the guided stroll:
+          </p>
+          <Link
+            href={`/school/${nextCourtyard.slug}`}
+            onClick={() => setGuidedCursor(nextCourtyard.slug, 0)}
+            className="mt-3 inline-flex items-center gap-2 rounded-full bg-electric px-4 py-2 text-sm font-semibold text-navy transition hover:bg-electric-dim"
+          >
+            <span aria-hidden>{nextCourtyard.emoji}</span>
+            Next courtyard · {nextCourtyard.title} →
+          </Link>
+        </div>
+      ) : null}
     </section>
   );
 }

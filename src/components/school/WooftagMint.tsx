@@ -5,7 +5,6 @@ import { useWoofProgress } from "@/hooks/useWoofProgress";
 import {
   WOOFTAG_BOWL_FULL,
   WOOFTAG_CLAIM_LATER,
-  WOOFTAG_DAILY_CAP,
   WOOFTAG_MIN_GATE_MS,
   WOOFTAG_TIP_COPY,
   isWooftagFormat,
@@ -16,17 +15,6 @@ const QUEUE_KEY = "quantumwoof.wooftag.queue.v1";
 
 type SavedTag = { tag: string; mintedAt: string };
 
-type StatusOk = {
-  ok: boolean;
-  remaining?: number;
-  minted?: number;
-  cap?: number;
-  queueLength?: number;
-  utcDate?: string;
-  error?: string;
-  message?: string;
-  claim?: string;
-};
 
 type MintRes = {
   ok: boolean;
@@ -68,7 +56,6 @@ export function WooftagMint() {
   const [phase, setPhase] = useState<
     "idle" | "waiting" | "stamping" | "queued" | "already" | "error"
   >("idle");
-  const [status, setStatus] = useState<StatusOk | null>(null);
   const [queue, setQueue] = useState<{ token: string; position?: number } | null>(
     null,
   );
@@ -109,10 +96,7 @@ export function WooftagMint() {
     const existing = readSaved();
     if (existing) {
       setSaved(existing);
-      void fetch("/api/wooftag/status")
-        .then((r) => r.json() as Promise<StatusOk>)
-        .then(setStatus)
-        .catch(() => undefined);
+      void fetch("/api/wooftag/status").catch(() => undefined);
       return;
     }
 
@@ -121,10 +105,8 @@ export function WooftagMint() {
 
     (async () => {
       try {
-        const statusRes = await fetch("/api/wooftag/status");
-        const statusJson = (await statusRes.json()) as StatusOk;
+        await fetch("/api/wooftag/status");
         if (cancelled) return;
-        setStatus(statusJson);
 
         // Soft gate: wait out the server min-age so we don't look like a script.
         await new Promise((r) => setTimeout(r, WOOFTAG_MIN_GATE_MS + 400));
@@ -171,11 +153,6 @@ export function WooftagMint() {
           setQueue(null);
           setPhase("idle");
           setRevealed(true);
-          setStatus((s) =>
-            s
-              ? { ...s, remaining: minted.remaining, ok: true }
-              : { ok: true, remaining: minted.remaining },
-          );
           return;
         }
 
@@ -214,20 +191,13 @@ export function WooftagMint() {
 
   if (!ready || !isSniffer) return null;
 
-  const remaining = status?.remaining;
-  const cap = status?.cap ?? WOOFTAG_DAILY_CAP;
+  // Status / mint APIs may still return minted/remaining/cap for ops — never show those to visitors.
 
   return (
     <div className="mt-6 rounded-2xl border border-electric/30 bg-electric/[0.07] p-4 sm:p-5">
       <p className="card-label mb-1">Wooftag · Hosky’s tip</p>
       <h3 className="text-lg font-semibold text-white">Issue only — not a Cardano send</h3>
       <p className="mt-1 text-sm leading-relaxed text-slate">{WOOFTAG_TIP_COPY}</p>
-
-      {typeof remaining === "number" ? (
-        <p className="mt-2 font-mono text-xs text-electric-dim">
-          Tip bowl today (UTC) · {Math.max(0, cap - remaining)}/{cap} minted · {remaining} left
-        </p>
-      ) : null}
 
       {saved ? (
         <div className="mt-4">

@@ -1026,3 +1026,19 @@ export function getTopic(slug: string): SchoolTopic | undefined {
 export function readyTopics(): SchoolTopic[] {
   return schoolTopics.filter((t) => t.status === "ready");
 }
+
+/** Ready topics in Hosky-suggested order (skips sniff-later stubs). */
+export function liveGuidedOrder(): SchoolTopic[] {
+  const bySlug = Object.fromEntries(schoolTopics.map((t) => [t.slug, t]));
+  return suggestedOrder
+    .map((s) => bySlug[s])
+    .filter((t): t is SchoolTopic => Boolean(t) && t.status === "ready");
+}
+
+/** Next live courtyard after `slug` on the guided path, if any. */
+export function nextLiveTopic(slug: string): SchoolTopic | undefined {
+  const live = liveGuidedOrder();
+  const i = live.findIndex((t) => t.slug === slug);
+  if (i < 0 || i >= live.length - 1) return undefined;
+  return live[i + 1];
+}

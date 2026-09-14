@@ -1,10 +1,9 @@
 import type { Metadata } from "next";
-import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { MarkVisited } from "@/components/school/MarkVisited";
+import { TopicSlides } from "@/components/school/TopicSlides";
 import { TopicStamp } from "@/components/school/TopicStamp";
-import { WoofCheck } from "@/components/school/WoofCheck";
 import { getTopic, schoolTopics } from "@/content/woofSchool";
 
 type Props = {
@@ -70,7 +69,7 @@ export default async function SchoolTopicPage({ params }: Props) {
 
       <header className="space-y-2">
         <p className="card-label">
-          {topic.emoji} Courtyard · {topic.lessons.length} micro-lessons
+          {topic.emoji} Courtyard · {topic.lessons.length} micro-lessons · slide path
         </p>
         <h1 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">
           {topic.title}
@@ -78,49 +77,7 @@ export default async function SchoolTopicPage({ params }: Props) {
         <p className="max-w-2xl text-sm leading-relaxed text-slate sm:text-base">{topic.blurb}</p>
       </header>
 
-      <div className="space-y-8">
-        {topic.lessons.map((lesson, idx) => (
-          <article key={lesson.slug} className="bento-card overflow-hidden p-0">
-            {lesson.image ? (
-              <div className="relative aspect-[16/10] w-full border-b border-white/10 bg-[#0a1224]">
-                <Image
-                  src={lesson.image}
-                  alt={lesson.imageAlt ?? lesson.title}
-                  fill
-                  className="object-cover object-center"
-                  sizes="(max-width: 768px) 100vw, 768px"
-                  priority={idx === 0}
-                />
-              </div>
-            ) : null}
-            <div className="space-y-3 p-5 sm:p-6">
-              <p className="font-mono text-[0.65rem] uppercase tracking-wider text-slate-muted">
-                Micro-lesson {idx + 1}
-              </p>
-              <h2 className="text-xl font-semibold text-white">{lesson.title}</h2>
-              {lesson.body.map((p) => (
-                <p key={p.slice(0, 48)} className="text-sm leading-relaxed text-slate">
-                  {p}
-                </p>
-              ))}
-              {lesson.bullets && lesson.bullets.length > 0 ? (
-                <ul className="list-disc space-y-1.5 pl-5 text-sm leading-relaxed text-slate">
-                  {lesson.bullets.map((b) => (
-                    <li key={b.slice(0, 48)}>{b}</li>
-                  ))}
-                </ul>
-              ) : null}
-              {lesson.after?.map((p) => (
-                <p key={p.slice(0, 48)} className="text-sm leading-relaxed text-slate">
-                  {p}
-                </p>
-              ))}
-            </div>
-          </article>
-        ))}
-      </div>
-
-      <WoofCheck topic={topic} />
+      <TopicSlides topic={topic} />
 
       <div className="flex flex-wrap gap-3 pb-4 text-sm">
         <Link href="/school" className="text-electric hover:text-white">

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { CampusProgress } from "@/components/school/CampusProgress";
+import { GuidedPathway } from "@/components/school/GuidedPathway";
 import { SnifferCertificate } from "@/components/school/SnifferCertificate";
 import { TopicStamp } from "@/components/school/TopicStamp";
 import { schoolTopics, suggestedOrder } from "@/content/woofSchool";
@@ -24,19 +25,20 @@ export default function SchoolCampusPage() {
           Woof School
         </h1>
         <p className="max-w-2xl text-sm leading-relaxed text-slate sm:text-base">
-          A park with labeled paths, not a corridor. Pick any topic. Hosky’s suggested stroll is
-          optional. Finish enough woof checks →{" "}
+          A park with labeled paths, not a corridor. Choose a guided stroll or open sniff — both
+          keep the map free. Finish enough woof checks →{" "}
           <span className="text-lavender">Certified Nebula Sniffer</span>.
         </p>
       </header>
 
+      <GuidedPathway />
       <CampusProgress />
       <SnifferCertificate />
 
       <section>
         <div className="mb-3 flex items-end justify-between gap-3">
           <h2 className="text-lg font-semibold text-white">Campus map</h2>
-          <p className="text-xs text-slate-muted">Hosky-suggested order · never a gate</p>
+          <p className="text-xs text-slate-muted">Always open · never a gate</p>
         </div>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {ordered.map((topic, i) => {
@@ -83,7 +85,7 @@ export default function SchoolCampusPage() {
                 </h3>
                 <p className="mt-1 text-xs leading-relaxed text-slate">{topic.blurb}</p>
                 <p className="mt-3 text-xs text-electric">
-                  {topic.lessons.length} micro-lessons · woof check →
+                  {topic.lessons.length} slides · woof check →
                 </p>
               </Link>
             );
@@ -100,9 +102,9 @@ export default function SchoolCampusPage() {
           className="rounded-full"
         />
         <p className="text-sm text-slate">
-          Progress stamps live in your browser (localStorage). Clear site data and the stamps
-          reset — the sky does not mind. A Wooftag issued on sniffer unlock is also backed up
-          here; Hosky does not reprint lost tags.
+          Progress stamps and guided cursor live in your browser (localStorage). Clear site data
+          and the stamps reset — the sky does not mind. A Wooftag issued on sniffer unlock is
+          also backed up here; Hosky does not reprint lost tags.
         </p>
       </aside>
     </div>
