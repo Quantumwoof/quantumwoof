@@ -1,6 +1,7 @@
 /**
- * Client-side alt/az projection for catalog stars via astronomy-engine.
- * Approximate country lat/lon + ~21:00 local — honest garden precision, not surveying.
+ * Tonight’s few: use astronomy-engine alt/az ONLY to decide which constellation
+ * IDs are up / ranked for the observer’s country. Playable layouts come from
+ * curated stylized graphs (classic Orion-as-Orion shapes) — never live projection.
  */
 
 import { Horizon, Observer } from "astronomy-engine";
@@ -12,15 +13,25 @@ import {
 } from "@/content/skyCatalog";
 import { getTonightStars } from "@/content/tonightStars";
 import {
+  STYLIZED_CONSTELLATIONS,
+  getStylizedById,
+  stylizedFieldStars,
+  type Constellation,
+  type StarPoint,
+} from "@/content/games";
+import {
   getCountryByCode,
   tonightLocalDate,
   type CountryOption,
   type Hemisphere,
 } from "@/lib/country";
-import { constellations as FALLBACK, type Constellation, type StarPoint } from "@/content/games";
 
-/** Minimum altitude (°) to treat a star as playable / visible. */
+/** Minimum altitude (°) to treat a path star as “up”. */
 export const MIN_ALT_DEG = 10;
+
+/** Cap tonight’s shortlist (locked UX: about 3–5). */
+export const TONIGHT_FEW_MAX = 5;
+export const TONIGHT_FEW_MIN = 3;
 
 export type ProjectedSkyStar = {
   catalogId: string;
@@ -31,41 +42,27 @@ export type ProjectedSkyStar = {
 };
 
 export type TonightPuzzle = Constellation & {
-  /** Whether this came from live projection (vs stylized fallback). */
-  projected: boolean;
+  /**
+   * True when this ID was ranked from live visibility for the country.
+   * Layout is always stylized — never alt/az playable coords.
+   */
+  fromSky: boolean;
   closeLoop?: boolean;
-  /** Faint field stars in the same viewBox (for finish morph). */
   fieldStars: { x: number; y: number; r: number }[];
   observerNote: string;
   whenLabel: string;
+  /** Shown on picker when fromSky */
+  upTonight?: boolean;
 };
 
 export type SkySession = {
   puzzles: TonightPuzzle[];
   country: CountryOption;
   when: Date;
+  /** True when we fell back to a small classic seasonal set (none / too few visible). */
   usedFallback: boolean;
+  fallbackReason?: string;
 };
-
-function normalizeAzDelta(delta: number): number {
-  let d = delta;
-  while (d > 180) d -= 360;
-  while (d < -180) d += 360;
-  return d;
-}
-
-function meanAzimuth(azs: number[]): number {
-  if (azs.length === 0) return 0;
-  let sx = 0;
-  let sy = 0;
-  for (const az of azs) {
-    const r = (az * Math.PI) / 180;
-    sx += Math.sin(r);
-    sy += Math.cos(r);
-  }
-  const ang = (Math.atan2(sx, sy) * 180) / Math.PI;
-  return (ang + 360) % 360;
-}
 
 function projectStar(
   ra: number,
@@ -100,53 +97,7 @@ function projectCatalogStar(
   };
 }
 
-type ViewFit = {
-  centerAz: number;
-  minRelAz: number;
-  maxRelAz: number;
-  minAlt: number;
-  maxAlt: number;
-};
-
-function fitView(stars: ProjectedSkyStar[]): ViewFit | null {
-  const visible = stars.filter((s) => s.alt >= MIN_ALT_DEG);
-  if (visible.length < 2) return null;
-  const centerAz = meanAzimuth(visible.map((s) => s.az));
-  const rel = visible.map((s) => normalizeAzDelta(s.az - centerAz));
-  const alts = visible.map((s) => s.alt);
-  return {
-    centerAz,
-    minRelAz: Math.min(...rel),
-    maxRelAz: Math.max(...rel),
-    minAlt: Math.min(...alts),
-    maxAlt: Math.max(...alts),
-  };
-}
-
-function toViewBox(
-  star: ProjectedSkyStar,
-  fit: ViewFit,
-  /** Extra bottom room so stars sit above the caption overlay on the board. */
-  pad: { x?: number; top?: number; bottom?: number } | number = 12,
-): { x: number; y: number } {
-  const padX = typeof pad === "number" ? pad : (pad.x ?? 12);
-  const padTop = typeof pad === "number" ? pad : (pad.top ?? 12);
-  const padBottom = typeof pad === "number" ? pad : (pad.bottom ?? 28);
-  const relAz = normalizeAzDelta(star.az - fit.centerAz);
-  const azSpan = Math.max(8, fit.maxRelAz - fit.minRelAz);
-  const altSpan = Math.max(8, fit.maxAlt - fit.minAlt);
-  const usableW = 100 - padX * 2;
-  const usableH = 100 - padTop - padBottom;
-  // Looking "into" the sky: +az (east of center) → right; higher alt → higher on board (lower y)
-  const x = padX + ((relAz - fit.minRelAz) / azSpan) * usableW;
-  const y = padTop + (1 - (star.alt - fit.minAlt) / altSpan) * usableH;
-  return {
-    x: Math.round(x * 10) / 10,
-    y: Math.round(y * 10) / 10,
-  };
-}
-
-function scoreConstellation(
+function scoreVisibility(
   def: CatalogConstellation,
   projected: ProjectedSkyStar[],
   tonightNames: Set<string>,
@@ -160,116 +111,94 @@ function scoreConstellation(
   for (const alias of def.tonightAliases ?? []) {
     if (tonightNames.has(alias.toLowerCase())) bonus += 8;
   }
-  // Prefer compact, high patterns
   return frac * 40 + meanAlt * 0.6 + bonus - (def.path.length > 6 ? 2 : 0);
 }
 
-function buildPuzzle(
-  def: CatalogConstellation,
-  pathProjected: ProjectedSkyStar[],
-  fieldProjected: ProjectedSkyStar[],
-  country: CountryOption,
-  when: Date,
-  minAlt = MIN_ALT_DEG,
-): TonightPuzzle | null {
-  const usable = pathProjected.filter((s) => s.alt >= minAlt);
-  if (usable.length < Math.min(3, def.path.length)) return null;
-
-  // Keep path order; skip constellation if any path star is below the clip
-  const ordered: ProjectedSkyStar[] = [];
-  for (const id of def.path) {
-    const p = pathProjected.find((s) => s.catalogId === id);
-    if (!p || p.alt < minAlt) {
-      return null;
-    }
-    ordered.push(p);
-  }
-
-  const fit = fitView(ordered);
-  if (!fit) return null;
-
-  // Expand fit slightly so field stars near the pattern can land in-frame
-  const paddedFit: ViewFit = {
-    ...fit,
-    minRelAz: fit.minRelAz - 4,
-    maxRelAz: fit.maxRelAz + 4,
-    minAlt: Math.max(minAlt, fit.minAlt - 4),
-    maxAlt: Math.min(90, fit.maxAlt + 6),
-  };
-
-  // Keep playable stars above the floating caption (~bottom 25% of the board).
-  const boardPad = { x: 12, top: 12, bottom: 28 };
-
-  const stars: StarPoint[] = ordered.map((s, i) => {
-    const { x, y } = toViewBox(s, paddedFit, boardPad);
-    return {
-      id: i + 1,
-      x,
-      y,
-      label: s.name,
-    };
-  });
-
-  const fieldStars = fieldProjected
-    .filter((s) => s.alt >= MIN_ALT_DEG)
-    .filter((s) => !def.path.includes(s.catalogId))
-    .map((s) => {
-      const { x, y } = toViewBox(s, paddedFit, boardPad);
-      const r = s.mag < 0.5 ? 0.7 : s.mag < 1.5 ? 0.5 : 0.35;
-      return { x, y, r };
-    })
-    .filter((s) => s.x >= 2 && s.x <= 98 && s.y >= 2 && s.y <= 98)
-    .slice(0, 48);
-
-  const hour = new Intl.DateTimeFormat("en-GB", {
-    timeZone: country.timezone,
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(when);
+function toTonightPuzzle(
+  stylized: Constellation,
+  opts: {
+    country: CountryOption;
+    when: Date;
+    fromSky: boolean;
+    whenLabel: string;
+    observerNote: string;
+  },
+): TonightPuzzle {
+  // Keep classic charts above the caption strip (~bottom 28%).
+  const stars: StarPoint[] = stylized.stars.map((s) => ({
+    ...s,
+    y: Math.min(68, s.y),
+  }));
 
   return {
-    id: def.id,
-    name: def.name,
-    hint: def.hint,
-    fact: def.fact,
+    ...stylized,
     stars,
-    projected: true,
-    closeLoop: def.closeLoop,
-    fieldStars,
-    observerNote: `Approx. ${country.name} (${country.lat.toFixed(1)}°, ${country.lon.toFixed(1)}°)`,
-    whenLabel: `~${hour} local`,
+    fromSky: opts.fromSky,
+    closeLoop: stylized.closeLoop,
+    fieldStars: stylizedFieldStars(stylized.id),
+    observerNote: opts.observerNote,
+    whenLabel: opts.whenLabel,
+    upTonight: opts.fromSky,
   };
 }
 
-function fallbackSession(country: CountryOption): SkySession {
-  const puzzles: TonightPuzzle[] = FALLBACK.map((c) => ({
-    ...c,
-    // Keep classic charts above the caption strip (same band as live projection).
-    stars: c.stars.map((s) => ({
-      ...s,
-      y: Math.round((8 + (s.y / 100) * 64) * 10) / 10,
-    })),
-    projected: false,
-    fieldStars: [
-      { x: 8, y: 12, r: 0.4 },
-      { x: 90, y: 18, r: 0.35 },
-      { x: 12, y: 88, r: 0.4 },
-      { x: 94, y: 78, r: 0.35 },
-      { x: 55, y: 12, r: 0.3 },
-      { x: 40, y: 90, r: 0.35 },
-      { x: 70, y: 55, r: 0.3 },
-      { x: 25, y: 40, r: 0.35 },
-    ],
-    observerNote: `${country.name} · stylized chart (projection unavailable)`,
-    whenLabel: "classic outline",
-  }));
-  return { puzzles, country, when: new Date(), usedFallback: true };
+/** Small classic seasonal set when the sky shortlist is empty. */
+function seasonalClassicIds(hemisphere: Hemisphere, ref: Date): string[] {
+  const tips = getTonightStars(hemisphere, ref);
+  const byAlias = new Map<string, string>();
+  for (const def of CATALOG_CONSTELLATIONS) {
+    for (const a of def.tonightAliases ?? [def.name]) {
+      byAlias.set(a.toLowerCase(), def.id);
+    }
+  }
+  const ids: string[] = [];
+  for (const tip of tips) {
+    const id = byAlias.get(tip.name.toLowerCase());
+    if (id && getStylizedById(id) && !ids.includes(id)) ids.push(id);
+    if (ids.length >= TONIGHT_FEW_MIN) break;
+  }
+  // Guarantee a friendly classic trio if tips didn't map
+  const northDefaults = ["orion", "cassiopeia", "ursa-minor", "summer-triangle", "leo"];
+  const southDefaults = ["crux", "orion", "canis-major", "scorpius", "sagittarius"];
+  const defaults = hemisphere === "south" ? southDefaults : northDefaults;
+  for (const id of defaults) {
+    if (!ids.includes(id) && getStylizedById(id)) ids.push(id);
+    if (ids.length >= TONIGHT_FEW_MIN) break;
+  }
+  return ids.slice(0, TONIGHT_FEW_MAX);
+}
+
+function fallbackSession(
+  country: CountryOption,
+  hemisphere: Hemisphere,
+  when: Date,
+  reason: string,
+): SkySession {
+  const ids = seasonalClassicIds(hemisphere, when);
+  const puzzles = ids
+    .map((id) => getStylizedById(id))
+    .filter((c): c is Constellation => Boolean(c))
+    .map((c) =>
+      toTonightPuzzle(c, {
+        country,
+        when,
+        fromSky: false,
+        whenLabel: "classic seasonal set",
+        observerNote: `${country.name} · ${reason}`,
+      }),
+    );
+  return {
+    puzzles,
+    country,
+    when,
+    usedFallback: true,
+    fallbackReason: reason,
+  };
 }
 
 /**
- * Build tonight’s playable constellation puzzles for a country code.
- * Prefers patterns actually above ~10° altitude at ~21:00 local.
+ * Build tonight’s shortlist (≈3–5) for a country.
+ * Visibility ranking uses lat/lon + ~21:00 local; playable coords are stylized.
  */
 export function buildTonightSkySession(
   countryCode: string | null | undefined,
@@ -284,69 +213,84 @@ export function buildTonightSkySession(
       getTonightStars(hemisphere, ref).map((e) => e.name.toLowerCase()),
     );
 
-    // Pre-project every catalog star once
+    const hour = new Intl.DateTimeFormat("en-GB", {
+      timeZone: country.timezone,
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(when);
+
     const projectedAll: ProjectedSkyStar[] = [];
     for (const star of ALL_STARS) {
       const p = projectCatalogStar(star.id, when, observer);
       if (p) projectedAll.push(p);
     }
-    if (projectedAll.length < 5) return fallbackSession(country);
+    if (projectedAll.length < 5) {
+      return fallbackSession(
+        country,
+        hemisphere,
+        when,
+        "Projection thin — classic seasonal shapes instead",
+      );
+    }
 
     const byId = new Map(projectedAll.map((s) => [s.catalogId, s]));
 
-    type Scored = { def: CatalogConstellation; score: number; path: ProjectedSkyStar[] };
+    type Scored = { def: CatalogConstellation; score: number };
     const scored: Scored[] = [];
     for (const def of CATALOG_CONSTELLATIONS) {
+      if (!getStylizedById(def.id)) continue;
       const path = def.path
         .map((id) => byId.get(id))
         .filter((s): s is ProjectedSkyStar => Boolean(s));
       if (path.length !== def.path.length) continue;
-      const score = scoreConstellation(def, path, tonightNames);
-      if (score >= 0) scored.push({ def, score, path });
+      // Require every path star above the clip for a clean “up tonight”
+      if (path.some((s) => s.alt < MIN_ALT_DEG)) continue;
+      const score = scoreVisibility(def, path, tonightNames);
+      if (score >= 0) scored.push({ def, score });
     }
 
     scored.sort((a, b) => b.score - a.score);
 
-    const puzzles: TonightPuzzle[] = [];
-    for (const item of scored) {
-      const puzzle = buildPuzzle(item.def, item.path, projectedAll, country, when);
-      if (puzzle) puzzles.push(puzzle);
-      if (puzzles.length >= 3) break;
+    const picked = scored.slice(0, TONIGHT_FEW_MAX);
+    if (picked.length === 0) {
+      return fallbackSession(
+        country,
+        hemisphere,
+        when,
+        "Nothing clear above the horizon — classic seasonal shapes instead",
+      );
     }
 
-    if (puzzles.length === 0) {
-      // Soft fallback: pick the highest mean-alt constellation even if sparse
-      let best: { def: CatalogConstellation; path: ProjectedSkyStar[]; mean: number } | null =
-        null;
-      for (const def of CATALOG_CONSTELLATIONS) {
-        const path = def.path
-          .map((id) => byId.get(id))
-          .filter((s): s is ProjectedSkyStar => s != null && s.alt >= 5);
-        if (path.length < Math.min(3, def.path.length)) continue;
-        // Use only visible stars, re-path by original order among visible
-        const visibleOrdered = def.path
-          .map((id) => byId.get(id))
-          .filter((s): s is ProjectedSkyStar => s != null && s.alt >= 5);
-        if (visibleOrdered.length < 3) continue;
-        const mean =
-          visibleOrdered.reduce((a, s) => a + s.alt, 0) / visibleOrdered.length;
-        if (!best || mean > best.mean) best = { def, path: visibleOrdered, mean };
-      }
-      if (best) {
-        // Temporarily rewrite path to visible-only for soft fallback
-        const softDef = { ...best.def, path: best.path.map((s) => s.catalogId) };
-        const puzzle = buildPuzzle(softDef, best.path, projectedAll, country, when, 5);
-        if (puzzle) {
-          puzzle.hint = `${puzzle.hint} (soft pick — some stars skim the horizon.)`;
-          puzzles.push(puzzle);
-        }
-      }
-    }
+    const puzzles: TonightPuzzle[] = picked.map(({ def }) => {
+      const stylized = getStylizedById(def.id)!;
+      return toTonightPuzzle(stylized, {
+        country,
+        when,
+        fromSky: true,
+        whenLabel: `~${hour} local`,
+        observerNote: `Approx. ${country.name} (${country.lat.toFixed(1)}°, ${country.lon.toFixed(1)}°)`,
+      });
+    });
 
-    if (puzzles.length === 0) return fallbackSession(country);
-
-    return { puzzles, country, when, usedFallback: false };
+    return {
+      puzzles,
+      country,
+      when,
+      usedFallback: false,
+    };
   } catch {
-    return fallbackSession(country);
+    const countrySafe = getCountryByCode(countryCode);
+    return fallbackSession(
+      countrySafe,
+      hemisphere,
+      ref,
+      "Sky helper hiccup — classic seasonal shapes instead",
+    );
   }
+}
+
+/** Expose stylized catalog size for tooling / sanity checks. */
+export function listStylizedIds(): string[] {
+  return STYLIZED_CONSTELLATIONS.map((c) => c.id);
 }

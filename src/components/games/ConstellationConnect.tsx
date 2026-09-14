@@ -17,6 +17,8 @@ import {
   type TonightPuzzle,
 } from "@/lib/skyProjection";
 
+/** Screen-level flow — picker first; Start before any star taps. */
+type Screen = "pick" | "play";
 type Phase = "ready" | "playing" | "done";
 
 type Jump = {
@@ -83,7 +85,8 @@ export function ConstellationConnect() {
   }, [hydrated, code, country.code, hemisphere]);
 
   const puzzles = session?.puzzles ?? [];
-  const [index, setIndex] = useState(0);
+  const [screen, setScreen] = useState<Screen>("pick");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [nextId, setNextId] = useState(1);
   const [phase, setPhase] = useState<Phase>("ready");
   const [message, setMessage] = useState("Tap the stars in order. Quiet focus beats speed.");
@@ -94,7 +97,10 @@ export function ConstellationConnect() {
   const [morph, setMorph] = useState(0);
   const jumpKey = useRef(0);
 
-  const sky: TonightPuzzle | null = puzzles[index] ?? null;
+  const sky: TonightPuzzle | null = useMemo(() => {
+    if (!selectedId) return null;
+    return puzzles.find((p) => p.id === selectedId) ?? null;
+  }, [puzzles, selectedId]);
 
   const tonightTip = useMemo(() => {
     if (!sky) return null;
@@ -113,36 +119,54 @@ export function ConstellationConnect() {
     [sky, nextId],
   );
 
-  const reset = useCallback(
-    (constellationIndex = index) => {
-      setIndex(constellationIndex);
-      setNextId(1);
-      setPhase("ready");
-      const p = puzzles[constellationIndex];
-      setMessage(p?.hint ?? "Tap the stars in order.");
-      setShake(false);
-      setJump(null);
-      setDogPos(null);
-      setMorph(0);
-    },
-    [index, puzzles],
-  );
-
-  // Reset when country / session changes
-  useEffect(() => {
-    if (!session) return;
-    setIndex(0);
+  const goToPicker = useCallback(() => {
+    setScreen("pick");
     setNextId(1);
     setPhase("ready");
-    setMessage(session.puzzles[0]?.hint ?? "Tap the stars in order.");
+    setShake(false);
     setJump(null);
     setDogPos(null);
     setMorph(0);
-  }, [session]);
+    setMessage("Pick one of tonight’s few, then Start.");
+  }, []);
 
+  const resetBoard = useCallback(() => {
+    if (!sky) return;
+    setNextId(1);
+    setPhase("ready");
+    setMessage(sky.hint);
+    setShake(false);
+    setJump(null);
+    setDogPos(null);
+    setMorph(0);
+  }, [sky]);
+
+  const startPlay = useCallback(() => {
+    if (!selectedId) return;
+    const p = puzzles.find((x) => x.id === selectedId);
+    if (!p) return;
+    setScreen("play");
+    setNextId(1);
+    setPhase("ready");
+    setMessage(p.hint);
+    setShake(false);
+    setJump(null);
+    setDogPos(null);
+    setMorph(0);
+  }, [selectedId, puzzles]);
+
+  // Reset picker when country / session changes
   useEffect(() => {
-    if (sky) setMessage(sky.hint);
-  }, [sky?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!session) return;
+    setScreen("pick");
+    setSelectedId(session.puzzles[0]?.id ?? null);
+    setNextId(1);
+    setPhase("ready");
+    setJump(null);
+    setDogPos(null);
+    setMorph(0);
+    setMessage("Pick one of tonight’s few, then Start.");
+  }, [session]);
 
   // Finish morph: ease into night-sky picture
   useEffect(() => {
@@ -209,7 +233,7 @@ export function ConstellationConnect() {
   }
 
   function onStar(id: number) {
-    if (!sky || phase === "done") return;
+    if (!sky || phase === "done" || screen !== "play") return;
 
     if (phase === "ready") setPhase("playing");
 
@@ -251,10 +275,118 @@ export function ConstellationConnect() {
     }
   }
 
-  if (!hydrated || !session || !sky) {
+  if (!hydrated || !session) {
     return (
       <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-5 py-10 text-center">
         <p className="text-sm text-slate">Lining up tonight’s chart…</p>
+      </div>
+    );
+  }
+
+  if (puzzles.length === 0) {
+    return (
+      <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-5 py-10 text-center">
+        <p className="text-sm text-slate">No shapes ready — try another country.</p>
+      </div>
+    );
+  }
+
+  /* ─── Picker screen ─── */
+  if (screen === "pick") {
+    return (
+      <div className="flex flex-col gap-4">
+        <div>
+          <h2 className="text-lg font-semibold text-white">Constellation connect</h2>
+          <p className="mt-1 text-sm text-slate">
+            Tonight’s few for{" "}
+            <span className="text-electric-dim">{country.name}</span>
+            {session.usedFallback
+              ? " — classic seasonal shapes (sky shortlist empty)."
+              : " — familiar outlines, ranked from what’s up."}{" "}
+            Choose one, then Start. Hosky will hop the line with you.
+          </p>
+          {session.usedFallback && session.fallbackReason ? (
+            <p className="mt-1 font-mono text-[0.65rem] text-slate-muted">
+              {session.fallbackReason}
+            </p>
+          ) : (
+            <p className="mt-1 font-mono text-[0.65rem] text-slate-muted">
+              {puzzles[0]?.observerNote} · {puzzles[0]?.whenLabel} · stylized boards
+            </p>
+          )}
+        </div>
+
+        <ul className="grid gap-3 sm:grid-cols-2" role="listbox" aria-label="Tonight’s constellations">
+          {puzzles.map((c) => {
+            const selected = c.id === selectedId;
+            return (
+              <li key={c.id}>
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={selected}
+                  onClick={() => setSelectedId(c.id)}
+                  className={`flex w-full flex-col items-start gap-2 rounded-2xl border px-4 py-3 text-left transition ${
+                    selected
+                      ? "border-electric/50 bg-electric/10 ring-1 ring-electric/30"
+                      : "border-white/10 bg-white/[0.03] hover:border-electric/30 hover:bg-white/[0.05]"
+                  }`}
+                >
+                  <div className="flex w-full flex-wrap items-center gap-2">
+                    <span className="text-sm font-semibold text-white">{c.name}</span>
+                    {c.upTonight ? (
+                      <span className="rounded-full border border-electric/30 bg-electric/10 px-2 py-0.5 text-[0.65rem] font-medium text-electric-dim">
+                        up tonight
+                      </span>
+                    ) : (
+                      <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[0.65rem] font-medium text-slate-muted">
+                        classic
+                      </span>
+                    )}
+                  </div>
+                  {c.shapeNote ? (
+                    <span className="text-xs text-slate">{c.shapeNote}</span>
+                  ) : null}
+                  <span className="font-mono text-[0.65rem] text-slate-muted">
+                    {c.stars.length} stars
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-xs text-slate-muted">
+            {selectedId
+              ? `Selected · ${puzzles.find((p) => p.id === selectedId)?.name ?? ""}`
+              : "Select a constellation to unlock Start."}
+          </p>
+          <button
+            type="button"
+            disabled={!selectedId}
+            onClick={startPlay}
+            className="rounded-full border border-electric/40 bg-electric/15 px-5 py-2 text-sm font-semibold text-electric-dim transition hover:bg-electric/25 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Start
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  /* ─── Play screen ─── */
+  if (!sky) {
+    return (
+      <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-5 py-8 text-center">
+        <p className="text-sm text-slate">Pick a constellation to begin.</p>
+        <button
+          type="button"
+          onClick={goToPicker}
+          className="mt-3 rounded-full border border-electric/40 bg-electric/15 px-4 py-1.5 text-xs font-semibold text-electric-dim"
+        >
+          Back to tonight’s few
+        </button>
       </div>
     );
   }
@@ -276,31 +408,13 @@ export function ConstellationConnect() {
         <div>
           <h2 className="text-lg font-semibold text-white">Constellation connect</h2>
           <p className="mt-1 text-sm text-slate">
-            Stars for{" "}
-            <span className="text-electric-dim">{country.name}</span> tonight
-            {session.usedFallback ? " (stylized fallback)" : ""} — connect in order, then watch
-            the sky settle into a picture.
+            Tracing{" "}
+            <span className="text-electric-dim">{sky.name}</span> — classic shape for{" "}
+            {country.name}. Tap stars in order; Hosky hops along.
           </p>
           <p className="mt-1 font-mono text-[0.65rem] text-slate-muted">
-            {sky.observerNote} · {sky.whenLabel} · approx. alt/az, not GPS
+            {sky.observerNote} · {sky.whenLabel} · stylized chart
           </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {puzzles.map((c, i) => (
-            <button
-              key={c.id}
-              type="button"
-              onClick={() => reset(i)}
-              aria-pressed={i === index}
-              className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
-                i === index
-                  ? "border-electric/50 bg-electric/15 text-electric-dim"
-                  : "border-white/10 bg-white/5 text-slate hover:border-electric/30 hover:text-white"
-              }`}
-            >
-              {c.name}
-            </button>
-          ))}
         </div>
       </div>
 
@@ -340,7 +454,6 @@ export function ConstellationConnect() {
           <rect width="100" height="100" fill={`url(#${gid}-night)`} className="pointer-events-none" />
           <rect width="100" height="100" fill={`url(#${gid}-glow)`} className="pointer-events-none" />
 
-          {/* Horizon hush during morph */}
           <ellipse
             cx="50"
             cy="108"
@@ -380,7 +493,6 @@ export function ConstellationConnect() {
             const isNext = star.id === nextId && phase !== "done";
             const settle = morph * 0.35;
             const visualR = (lit || done ? 2.4 : isNext ? 2.2 : 1.8) + settle;
-            // Generous hit disk — visual dots are ~2px in viewBox units (~6–8 CSS px).
             const hitR = Math.max(7, visualR + (isNext ? 5 : 3.5));
             return (
               <g key={star.id}>
@@ -397,7 +509,6 @@ export function ConstellationConnect() {
                     className={`pointer-events-none ${isNext ? "animate-pulse-glow" : ""}`.trim()}
                   />
                 )}
-                {/* Invisible hit target under the glow; caption overlay uses pointer-events-none. */}
                 {!done ? (
                   <circle
                     cx={star.x}
@@ -447,7 +558,6 @@ export function ConstellationConnect() {
 
           {dogPos && !done ? <JumpDog x={dogPos.x} y={dogPos.y} facing={dogPos.facing} /> : null}
 
-          {/* Morph caption inside the sky picture */}
           {done ? (
             <g opacity={0.35 + morph * 0.65} className="pointer-events-none">
               <text
@@ -491,18 +601,25 @@ export function ConstellationConnect() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="font-mono text-xs text-slate-muted">
           {phase === "done"
-            ? sky.projected
-              ? "Tonight’s sky picture settled"
-              : "Constellation complete (classic chart)"
+            ? "Night picture settled"
             : `Progress ${Math.min(nextId - 1, sky.stars.length)} / ${sky.stars.length}`}
         </p>
-        <button
-          type="button"
-          onClick={() => reset(index)}
-          className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-white transition hover:border-electric/40 hover:bg-electric/10"
-        >
-          {phase === "done" ? "Trace again" : "Reset"}
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={goToPicker}
+            className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-white transition hover:border-electric/40 hover:bg-electric/10"
+          >
+            Change constellation
+          </button>
+          <button
+            type="button"
+            onClick={resetBoard}
+            className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-white transition hover:border-electric/40 hover:bg-electric/10"
+          >
+            {phase === "done" ? "Trace again" : "Reset"}
+          </button>
+        </div>
       </div>
     </div>
   );
