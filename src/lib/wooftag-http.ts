@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { WOOFTAG_MIN_GATE_MS } from "@/lib/wooftag";
+import { WOOFTAG_MIN_GATE_MS, newOpaqueId } from "@/lib/wooftag";
 
 export const GATE_COOKIE = "qw_woof_gate";
 export const DONE_COOKIE = "qw_wooftag_done";
 export const QUEUE_COOKIE = "qw_wooftag_q";
+/** Durable browser identity — survives localStorage clears; bound in store on mint. */
+export const BROWSER_COOKIE = "qw_wooftag_browser";
+
+const BROWSER_ID_MAX_AGE = 60 * 60 * 24 * 400;
+const BROWSER_ID_RE = /^[0-9A-HJKMNP-TV-Z]{8,64}$/;
 
 const cookieBase = {
   httpOnly: true,
@@ -59,11 +64,40 @@ export function gateCookieValue(now = Date.now()): CookieSet {
 }
 
 export function doneCookie(): CookieSet {
-  return { name: DONE_COOKIE, value: "1", options: { maxAge: 60 * 60 * 24 * 400 } };
+  return { name: DONE_COOKIE, value: "1", options: { maxAge: BROWSER_ID_MAX_AGE } };
 }
 
 export function queueCookie(token: string): CookieSet {
   return { name: QUEUE_COOKIE, value: token, options: { maxAge: 60 * 60 * 24 * 8 } };
+}
+
+export function browserCookie(id: string): CookieSet {
+  return {
+    name: BROWSER_COOKIE,
+    value: id,
+    options: { maxAge: BROWSER_ID_MAX_AGE },
+  };
+}
+
+/** Valid random browser id from cookie, or null if missing/malformed. */
+export function readBrowserId(req: NextRequest): string | null {
+  const v = req.cookies.get(BROWSER_COOKIE)?.value?.trim() ?? "";
+  if (!BROWSER_ID_RE.test(v)) return null;
+  return v;
+}
+
+/**
+ * Ensure a durable browser cookie exists. Sets one on first mint/status hit.
+ * Clearing localStorage alone does not clear this cookie.
+ */
+export function ensureBrowserId(req: NextRequest): {
+  id: string;
+  cookie: CookieSet | null;
+} {
+  const existing = readBrowserId(req);
+  if (existing) return { id: existing, cookie: null };
+  const id = newOpaqueId(16);
+  return { id, cookie: browserCookie(id) };
 }
 
 export function alreadyIssued(req: NextRequest): boolean {
@@ -84,5 +118,10 @@ export function gateTooFresh(req: NextRequest): boolean {
 export function ensureGateCookies(req: NextRequest): CookieSet[] {
   const extra: CookieSet[] = [];
   if (!req.cookies.get(GATE_COOKIE)?.value) extra.push(gateCookieValue());
+  const browser = ensureBrowserId(req);
+  if (browser.cookie) extra.push(browser.cookie);
   return extra;
 }
+
+export const ALREADY_SNIFFED_COPY =
+  "This browser already sniffed a Wooftag";

@@ -7,6 +7,15 @@
  * Build/dev without KV: skip durable store so `next build` never throws.
  * Runtime without KV: callers get null and return a graceful error.
  *
+ * Daily cap: keyed by UTC date (`wooftag:day:YYYY-MM-DD`). Each UTC day
+ * starts at 0 minted / 200 remaining — unused slots do NOT roll over.
+ * Overflow FIFO queue (`wooftag:queue`) persists across midnight; when the
+ * new day's bowl opens, queued sniffers mint first as they return, then
+ * new mints fill whatever of the 200 remains.
+ *
+ * Browser lock: `wooftag:browser:<id>` binds the durable `qw_wooftag_browser`
+ * cookie id after a successful mint (one sniff per browser).
+ *
  * TODO: do not add a filesystem JSON fallback — serverless disks are not durable.
  */
 
@@ -27,6 +36,7 @@ export type StoreKind = "upstash" | "memory" | "none";
 
 const DAY_TTL_SEC = 60 * 60 * 24 * 4;
 const HASH_TTL_SEC = 60 * 60 * 24 * 400;
+const BROWSER_TTL_SEC = 60 * 60 * 24 * 400;
 const QUEUE_KEY = "wooftag:queue";
 
 function redisEnv(): { url: string; token: string } | null {
@@ -84,10 +94,14 @@ export type WooftagStore = {
     windowSec: number,
   ): Promise<{ ok: boolean; count: number }>;
   getDay(utcDate?: string): Promise<DayCounts>;
-  /** Atomically take one of today's 200 slots. */
+  /** Atomically take one of today's 200 slots (UTC day key; no rollover). */
   reserveDailySlot(utcDate?: string): Promise<{ reserved: boolean } & DayCounts>;
   releaseDailySlot(utcDate?: string): Promise<void>;
   putHash(hash: string, mintedAt: string): Promise<boolean>;
+  /** True if this browser id already minted (durable lock). */
+  isBrowserBound(browserId: string): Promise<boolean>;
+  /** Bind browser id after successful mint. Returns false if already bound. */
+  bindBrowser(browserId: string, mintedAt: string): Promise<boolean>;
   getQueue(): Promise<QueueItem[]>;
   setQueue(items: QueueItem[]): Promise<void>;
 };
@@ -117,6 +131,7 @@ class RedisStore implements WooftagStore {
   }
 
   async reserveDailySlot(utcDate = utcDateKey()) {
+    // Per-UTC-day counter — a new date key resets to 0; unused yesterday slots are gone.
     const k = `wooftag:day:${utcDate}`;
     const minted = await this.redis.incr(k);
     if (minted === 1) await this.redis.expire(k, DAY_TTL_SEC);
@@ -138,6 +153,19 @@ class RedisStore implements WooftagStore {
   async putHash(hash: string, mintedAt: string) {
     const k = `wooftag:h:${hash}`;
     const ok = await this.redis.set(k, mintedAt, { nx: true, ex: HASH_TTL_SEC });
+    return Boolean(ok);
+  }
+
+  async isBrowserBound(browserId: string) {
+    const v = await this.redis.get(`wooftag:browser:${browserId}`);
+    return v != null && v !== "";
+  }
+
+  async bindBrowser(browserId: string, mintedAt: string) {
+    const ok = await this.redis.set(`wooftag:browser:${browserId}`, mintedAt, {
+      nx: true,
+      ex: BROWSER_TTL_SEC,
+    });
     return Boolean(ok);
   }
 
@@ -168,6 +196,7 @@ class MemoryStore implements WooftagStore {
   kind: StoreKind = "memory";
   private counts = new Map<string, number>();
   private hashes = new Map<string, string>();
+  private browsers = new Map<string, string>();
   private rl = new Map<string, { n: number; reset: number }>();
   private queue: QueueItem[] = [];
 
@@ -210,6 +239,16 @@ class MemoryStore implements WooftagStore {
   async putHash(hash: string, mintedAt: string) {
     if (this.hashes.has(hash)) return false;
     this.hashes.set(hash, mintedAt);
+    return true;
+  }
+
+  async isBrowserBound(browserId: string) {
+    return this.browsers.has(browserId);
+  }
+
+  async bindBrowser(browserId: string, mintedAt: string) {
+    if (this.browsers.has(browserId)) return false;
+    this.browsers.set(browserId, mintedAt);
     return true;
   }
 

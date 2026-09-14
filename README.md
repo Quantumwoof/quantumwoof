@@ -81,7 +81,8 @@ On **Certified Nebula Sniffer** unlock, Hosky *issues* a Wooftag (not a Cardano 
 - Shown once with a copy button; this browser also keeps a localStorage backup
 - Server stores **only** `SHA-256(tag + WOOFTAG_PEPPER)` — never plaintext
 - Future claim of 1B Quantumwoof: **Claim opens later**. Framed as a tip, not earnings
-- Cap: **200 new tags per UTC day**. If the bowl is full the certificate still unlocks; mint is queued until 00:00 UTC
+- Cap: **200 new tags per UTC day** (unused slots do not roll over). Overflow FIFO queue drains after 00:00 UTC first, then new mints fill remaining slots
+- One mint per browser: durable httpOnly cookie `qw_wooftag_browser` bound in the store — clearing localStorage alone cannot remint
 
 ### Env (Vercel)
 

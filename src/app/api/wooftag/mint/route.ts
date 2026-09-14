@@ -12,9 +12,11 @@ import {
 import { getWooftagPepper, hashWooftag } from "@/lib/wooftag-hash";
 import { getWooftagStore, type QueueItem } from "@/lib/wooftag-store";
 import {
+  ALREADY_SNIFFED_COPY,
   alreadyIssued,
   clientIp,
   doneCookie,
+  ensureBrowserId,
   gateTooFresh,
   json,
   queueCookie,
@@ -75,17 +77,23 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  if (alreadyIssued(req)) {
+  // Durable browser id cookie (set on first attempt if missing).
+  const browser = ensureBrowserId(req);
+  const pendingCookies = browser.cookie ? [browser.cookie] : [];
+
+  if (alreadyIssued(req) || (await store.isBrowserBound(browser.id))) {
     const day = await store.getDay();
-    return json({
-      ok: true,
-      status: "already_issued",
-      message:
-        "This browser already received a Wooftag. Hosky doesn’t reprint lost tags — check this device’s local backup.",
-      remaining: day.remaining,
-      utcDate: day.utcDate,
-      claim: WOOFTAG_CLAIM_LATER,
-    });
+    return json(
+      {
+        ok: true,
+        status: "already_issued",
+        message: ALREADY_SNIFFED_COPY,
+        remaining: day.remaining,
+        utcDate: day.utcDate,
+        claim: WOOFTAG_CLAIM_LATER,
+      },
+      { cookies: [...pendingCookies, doneCookie()] },
+    );
   }
 
   if (gateTooFresh(req)) {
@@ -95,7 +103,7 @@ export async function POST(req: NextRequest) {
         error: "too_fast",
         message: "Too speedy — sniff the courtyards first, then come back for Hosky’s tip.",
       },
-      { status: 400 },
+      { status: 400, cookies: pendingCookies },
     );
   }
 
@@ -117,7 +125,7 @@ export async function POST(req: NextRequest) {
         error: "not_sniffer",
         message: "Woof a few more courtyards first — the tip bowl is for Certified Nebula Sniffers.",
       },
-      { status: 400 },
+      { status: 400, cookies: pendingCookies },
     );
   }
 
@@ -129,7 +137,7 @@ export async function POST(req: NextRequest) {
   if (startedAt !== null && startedAt > now + 60_000) {
     return json(
       { ok: false, error: "too_fast", message: "Clock looks wobbly. Try again." },
-      { status: 400 },
+      { status: 400, cookies: pendingCookies },
     );
   }
   // Soft: reject absurdly instant mints when the client admits it just started.
@@ -140,7 +148,7 @@ export async function POST(req: NextRequest) {
         error: "too_fast",
         message: "Too speedy — sniff the courtyards first, then come back for Hosky’s tip.",
       },
-      { status: 400 },
+      { status: 400, cookies: pendingCookies },
     );
   }
 
@@ -168,14 +176,37 @@ export async function POST(req: NextRequest) {
         message: WOOFTAG_BOWL_FULL,
         claim: WOOFTAG_CLAIM_LATER,
       },
-      { cookies: [queueCookie(token)] },
+      { cookies: [...pendingCookies, queueCookie(token)] },
     );
   }
 
-  // Bowl is open. FIFO: queued sniffers keep their token until they mint.
-  const nextQueue = queueToken
-    ? queue.filter((q) => q.id !== queueToken)
-    : queue;
+  // Bowl is open (new UTC day = fresh 200; unused slots never roll over).
+  // FIFO overflow from prior days drains first: only the head may mint while
+  // the queue is non-empty; others keep/join the line. When empty, new mints
+  // fill remaining slots up to 200.
+  if (queue.length > 0) {
+    const head = queue[0];
+    if (!queueToken || queueToken !== head?.id) {
+      const { items, token, position } = enqueue(queue, queueToken, now);
+      await store.setQueue(items);
+      return json(
+        {
+          ok: true,
+          status: "queued",
+          queueToken: token,
+          position,
+          remaining: day.remaining,
+          utcDate: day.utcDate,
+          cap: WOOFTAG_DAILY_CAP,
+          message: WOOFTAG_BOWL_FULL,
+          claim: WOOFTAG_CLAIM_LATER,
+        },
+        { cookies: [...pendingCookies, queueCookie(token)] },
+      );
+    }
+  }
+
+  const nextQueue = queueToken ? queue.filter((q) => q.id !== queueToken) : queue;
   if (nextQueue.length !== queue.length) await store.setQueue(nextQueue);
 
   const slot = await store.reserveDailySlot(day.utcDate);
@@ -194,7 +225,7 @@ export async function POST(req: NextRequest) {
         message: WOOFTAG_BOWL_FULL,
         claim: WOOFTAG_CLAIM_LATER,
       },
-      { cookies: [queueCookie(token)] },
+      { cookies: [...pendingCookies, queueCookie(token)] },
     );
   }
 
@@ -213,7 +244,24 @@ export async function POST(req: NextRequest) {
     await store.releaseDailySlot(day.utcDate);
     return json(
       { ok: false, error: "issue_failed", message: "Hosky dropped the stamp. Try again." },
-      { status: 500 },
+      { status: 500, cookies: pendingCookies },
+    );
+  }
+
+  // Bind browser id in the store so clearing localStorage alone cannot remint.
+  const bound = await store.bindBrowser(browser.id, mintedAt);
+  if (!bound) {
+    await store.releaseDailySlot(day.utcDate);
+    return json(
+      {
+        ok: true,
+        status: "already_issued",
+        message: ALREADY_SNIFFED_COPY,
+        remaining: (await store.getDay(day.utcDate)).remaining,
+        utcDate: day.utcDate,
+        claim: WOOFTAG_CLAIM_LATER,
+      },
+      { cookies: [...pendingCookies, doneCookie()] },
     );
   }
 
@@ -229,7 +277,7 @@ export async function POST(req: NextRequest) {
       claim: WOOFTAG_CLAIM_LATER,
       note: WOOFTAG_TIP_COPY,
     },
-    { cookies: [doneCookie()] },
+    { cookies: [...pendingCookies, doneCookie()] },
   );
 }
 

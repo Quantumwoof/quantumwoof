@@ -283,7 +283,7 @@ export function WooftagMint() {
       ) : null}
       {!saved && phase === "already" ? (
         <p className="mt-4 text-sm text-slate">
-          This browser already received a Wooftag. If you don’t see it, the local copy was
+          This browser already sniffed a Wooftag. If you don’t see it, the local copy was
           cleared — Hosky doesn’t reprint.
         </p>
       ) : null}
