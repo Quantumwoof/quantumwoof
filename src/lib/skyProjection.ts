@@ -126,15 +126,20 @@ function fitView(stars: ProjectedSkyStar[]): ViewFit | null {
 function toViewBox(
   star: ProjectedSkyStar,
   fit: ViewFit,
-  pad = 12,
+  /** Extra bottom room so stars sit above the caption overlay on the board. */
+  pad: { x?: number; top?: number; bottom?: number } | number = 12,
 ): { x: number; y: number } {
+  const padX = typeof pad === "number" ? pad : (pad.x ?? 12);
+  const padTop = typeof pad === "number" ? pad : (pad.top ?? 12);
+  const padBottom = typeof pad === "number" ? pad : (pad.bottom ?? 28);
   const relAz = normalizeAzDelta(star.az - fit.centerAz);
   const azSpan = Math.max(8, fit.maxRelAz - fit.minRelAz);
   const altSpan = Math.max(8, fit.maxAlt - fit.minAlt);
-  const usable = 100 - pad * 2;
+  const usableW = 100 - padX * 2;
+  const usableH = 100 - padTop - padBottom;
   // Looking "into" the sky: +az (east of center) → right; higher alt → higher on board (lower y)
-  const x = pad + ((relAz - fit.minRelAz) / azSpan) * usable;
-  const y = pad + (1 - (star.alt - fit.minAlt) / altSpan) * usable;
+  const x = padX + ((relAz - fit.minRelAz) / azSpan) * usableW;
+  const y = padTop + (1 - (star.alt - fit.minAlt) / altSpan) * usableH;
   return {
     x: Math.round(x * 10) / 10,
     y: Math.round(y * 10) / 10,
@@ -192,8 +197,11 @@ function buildPuzzle(
     maxAlt: Math.min(90, fit.maxAlt + 6),
   };
 
+  // Keep playable stars above the floating caption (~bottom 25% of the board).
+  const boardPad = { x: 12, top: 12, bottom: 28 };
+
   const stars: StarPoint[] = ordered.map((s, i) => {
-    const { x, y } = toViewBox(s, paddedFit);
+    const { x, y } = toViewBox(s, paddedFit, boardPad);
     return {
       id: i + 1,
       x,
@@ -206,7 +214,7 @@ function buildPuzzle(
     .filter((s) => s.alt >= MIN_ALT_DEG)
     .filter((s) => !def.path.includes(s.catalogId))
     .map((s) => {
-      const { x, y } = toViewBox(s, paddedFit);
+      const { x, y } = toViewBox(s, paddedFit, boardPad);
       const r = s.mag < 0.5 ? 0.7 : s.mag < 1.5 ? 0.5 : 0.35;
       return { x, y, r };
     })
@@ -237,6 +245,11 @@ function buildPuzzle(
 function fallbackSession(country: CountryOption): SkySession {
   const puzzles: TonightPuzzle[] = FALLBACK.map((c) => ({
     ...c,
+    // Keep classic charts above the caption strip (same band as live projection).
+    stars: c.stars.map((s) => ({
+      ...s,
+      y: Math.round((8 + (s.y / 100) * 64) * 10) / 10,
+    })),
     projected: false,
     fieldStars: [
       { x: 8, y: 12, r: 0.4 },

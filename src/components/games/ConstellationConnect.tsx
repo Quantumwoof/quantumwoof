@@ -337,8 +337,8 @@ export function ConstellationConnect() {
             </filter>
           </defs>
 
-          <rect width="100" height="100" fill={`url(#${gid}-night)`} />
-          <rect width="100" height="100" fill={`url(#${gid}-glow)`} />
+          <rect width="100" height="100" fill={`url(#${gid}-night)`} className="pointer-events-none" />
+          <rect width="100" height="100" fill={`url(#${gid}-glow)`} className="pointer-events-none" />
 
           {/* Horizon hush during morph */}
           <ellipse
@@ -347,6 +347,7 @@ export function ConstellationConnect() {
             rx="70"
             ry={12 + morph * 8}
             fill={`rgba(15,23,42,${0.2 + morph * 0.45})`}
+            className="pointer-events-none"
           />
 
           {sky.fieldStars.map((f, i) => (
@@ -356,7 +357,7 @@ export function ConstellationConnect() {
               cy={f.y}
               r={f.r * (0.7 + morph * 0.6)}
               fill={`rgba(248,250,252,${fieldOpacity * (0.5 + (i % 3) * 0.15)})`}
-              className={morph > 0.2 ? "animate-twinkle" : undefined}
+              className={`pointer-events-none ${morph > 0.2 ? "animate-twinkle" : ""}`.trim()}
               style={{ animationDelay: `${(i % 9) * 0.28}s` }}
             />
           ))}
@@ -370,6 +371,7 @@ export function ConstellationConnect() {
               strokeLinecap="round"
               strokeLinejoin="round"
               filter={morph > 0.4 ? `url(#${gid}-soft)` : undefined}
+              className="pointer-events-none"
             />
           ) : null}
 
@@ -377,6 +379,9 @@ export function ConstellationConnect() {
             const lit = star.id < nextId;
             const isNext = star.id === nextId && phase !== "done";
             const settle = morph * 0.35;
+            const visualR = (lit || done ? 2.4 : isNext ? 2.2 : 1.8) + settle;
+            // Generous hit disk — visual dots are ~2px in viewBox units (~6–8 CSS px).
+            const hitR = Math.max(7, visualR + (isNext ? 5 : 3.5));
             return (
               <g key={star.id}>
                 {(isNext || done) && (
@@ -389,13 +394,31 @@ export function ConstellationConnect() {
                       done ? `rgba(212,196,253,${0.35 + morph * 0.35})` : "rgba(62,207,255,0.35)"
                     }
                     strokeWidth="0.5"
-                    className={isNext ? "animate-pulse-glow" : undefined}
+                    className={`pointer-events-none ${isNext ? "animate-pulse-glow" : ""}`.trim()}
                   />
                 )}
+                {/* Invisible hit target under the glow; caption overlay uses pointer-events-none. */}
+                {!done ? (
+                  <circle
+                    cx={star.x}
+                    cy={star.y}
+                    r={hitR}
+                    fill="transparent"
+                    className="cursor-pointer"
+                    style={{ touchAction: "manipulation" }}
+                    tabIndex={0}
+                    role="button"
+                    aria-label={`${star.label ?? `Star ${star.id}`}${
+                      isNext ? ", next" : lit ? ", connected" : ""
+                    }`}
+                    onClick={() => onStar(star.id)}
+                    onKeyDown={(e) => onKeyStar(e, star.id)}
+                  />
+                ) : null}
                 <circle
                   cx={star.x}
                   cy={star.y}
-                  r={(lit || done ? 2.4 : isNext ? 2.2 : 1.8) + settle}
+                  r={visualR}
                   fill={
                     lit || done
                       ? "var(--electric)"
@@ -404,14 +427,7 @@ export function ConstellationConnect() {
                         : "rgba(248,250,252,0.7)"
                   }
                   filter={done ? `url(#${gid}-soft)` : undefined}
-                  className="cursor-pointer"
-                  tabIndex={done ? -1 : 0}
-                  role="button"
-                  aria-label={`${star.label ?? `Star ${star.id}`}${
-                    isNext ? ", next" : lit ? ", connected" : ""
-                  }`}
-                  onClick={() => onStar(star.id)}
-                  onKeyDown={(e) => onKeyStar(e, star.id)}
+                  className="pointer-events-none"
                 />
                 {star.label && (isNext || lit || done) ? (
                   <text
@@ -457,7 +473,7 @@ export function ConstellationConnect() {
           ) : null}
         </svg>
 
-        <div className="absolute inset-x-0 bottom-0 border-t border-white/5 bg-navy/70 px-4 py-3 backdrop-blur-sm">
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 border-t border-white/5 bg-navy/70 px-4 py-3 backdrop-blur-sm">
           <p className="text-xs font-medium text-electric-dim">
             {done ? `Night picture · ${sky.name}` : sky.name}
           </p>
