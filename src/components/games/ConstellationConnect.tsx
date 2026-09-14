@@ -9,7 +9,13 @@ import {
   useState,
   type KeyboardEvent,
 } from "react";
-import { constellations, type Constellation, type StarPoint } from "@/content/games";
+import type { StarPoint } from "@/content/games";
+import { getTonightStars } from "@/content/tonightStars";
+import { useCountry } from "@/hooks/useCountry";
+import {
+  buildTonightSkySession,
+  type TonightPuzzle,
+} from "@/lib/skyProjection";
 
 type Phase = "ready" | "playing" | "done";
 
@@ -39,22 +45,15 @@ function JumpDog({ x, y, facing }: { x: number; y: number; facing: number }) {
       transform={`translate(${x} ${y}) scale(${facing}, 1)`}
       style={{ pointerEvents: "none" }}
     >
-      {/* shadow */}
       <ellipse cx="0" cy="3.2" rx="3.2" ry="0.7" fill="rgba(2,6,23,0.45)" />
-      {/* body */}
       <ellipse cx="-0.4" cy="0" rx="2.6" ry="1.55" fill="rgba(226,232,240,0.92)" />
-      {/* head */}
       <ellipse cx="2.1" cy="-0.9" rx="1.45" ry="1.2" fill="rgba(226,232,240,0.95)" />
-      {/* ears */}
       <path d="M1.2 -1.6 L0.9 -3.1 L2.1 -1.8 Z" fill="rgba(203,213,225,0.95)" />
       <path d="M2.5 -1.7 L3.4 -3.2 L3.5 -1.5 Z" fill="rgba(203,213,225,0.95)" />
-      {/* eyes */}
       <circle cx="2.3" cy="-1.05" r="0.35" fill="var(--electric)" />
       <circle cx="2.95" cy="-1.05" r="0.35" fill="var(--electric)" />
-      {/* snout */}
       <ellipse cx="3.35" cy="-0.55" rx="0.85" ry="0.55" fill="rgba(241,245,249,0.9)" />
       <circle cx="4.05" cy="-0.5" r="0.22" fill="var(--lavender)" />
-      {/* tail */}
       <path
         d="M-2.8 0 Q-4.2 -1.4 -3.9 -2.6"
         stroke="rgba(226,232,240,0.9)"
@@ -63,7 +62,6 @@ function JumpDog({ x, y, facing }: { x: number; y: number; facing: number }) {
         fill="none"
         className="constellation-jump-tail"
       />
-      {/* legs tucked for jump */}
       <path
         d="M-1.6 1.2 L-2.1 2.4 M0.2 1.3 L0.5 2.5 M1.2 1.1 L1.6 2.3"
         stroke="rgba(148,163,184,0.85)"
@@ -76,6 +74,15 @@ function JumpDog({ x, y, facing }: { x: number; y: number; facing: number }) {
 
 export function ConstellationConnect() {
   const gid = useId();
+  const { country, hemisphere, hydrated, code } = useCountry();
+  const reducedMotion = usePrefersReducedMotion();
+
+  const session = useMemo(() => {
+    if (!hydrated) return null;
+    return buildTonightSkySession(code ?? country.code, hemisphere);
+  }, [hydrated, code, country.code, hemisphere]);
+
+  const puzzles = session?.puzzles ?? [];
   const [index, setIndex] = useState(0);
   const [nextId, setNextId] = useState(1);
   const [phase, setPhase] = useState<Phase>("ready");
@@ -83,14 +90,27 @@ export function ConstellationConnect() {
   const [shake, setShake] = useState(false);
   const [jump, setJump] = useState<Jump | null>(null);
   const [dogPos, setDogPos] = useState<{ x: number; y: number; facing: number } | null>(null);
+  /** 0 = playing board, 1 = finished night-sky picture */
+  const [morph, setMorph] = useState(0);
   const jumpKey = useRef(0);
-  const reducedMotion = usePrefersReducedMotion();
 
-  const sky: Constellation = constellations[index];
+  const sky: TonightPuzzle | null = puzzles[index] ?? null;
+
+  const tonightTip = useMemo(() => {
+    if (!sky) return null;
+    const entries = getTonightStars(hemisphere);
+    const hit = entries.find(
+      (e) =>
+        e.name.toLowerCase() === sky.name.toLowerCase() ||
+        sky.name.toLowerCase().includes(e.name.toLowerCase()) ||
+        e.name.toLowerCase().includes(sky.name.toLowerCase().split(" ")[0] ?? ""),
+    );
+    return hit?.tip ?? null;
+  }, [sky, hemisphere]);
 
   const connected = useMemo(
-    () => sky.stars.filter((s) => s.id < nextId),
-    [sky.stars, nextId],
+    () => (sky ? sky.stars.filter((s) => s.id < nextId) : []),
+    [sky, nextId],
   );
 
   const reset = useCallback(
@@ -98,17 +118,54 @@ export function ConstellationConnect() {
       setIndex(constellationIndex);
       setNextId(1);
       setPhase("ready");
-      setMessage(constellations[constellationIndex].hint);
+      const p = puzzles[constellationIndex];
+      setMessage(p?.hint ?? "Tap the stars in order.");
       setShake(false);
       setJump(null);
       setDogPos(null);
+      setMorph(0);
     },
-    [index],
+    [index, puzzles],
   );
 
+  // Reset when country / session changes
   useEffect(() => {
-    setMessage(sky.hint);
-  }, [sky.hint]);
+    if (!session) return;
+    setIndex(0);
+    setNextId(1);
+    setPhase("ready");
+    setMessage(session.puzzles[0]?.hint ?? "Tap the stars in order.");
+    setJump(null);
+    setDogPos(null);
+    setMorph(0);
+  }, [session]);
+
+  useEffect(() => {
+    if (sky) setMessage(sky.hint);
+  }, [sky?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Finish morph: ease into night-sky picture
+  useEffect(() => {
+    if (phase !== "done") {
+      setMorph(0);
+      return;
+    }
+    if (reducedMotion) {
+      setMorph(1);
+      return;
+    }
+    const duration = 1400;
+    const start = performance.now();
+    let raf = 0;
+    const frame = (now: number) => {
+      const t = Math.min(1, (now - start) / duration);
+      const ease = 1 - (1 - t) ** 3;
+      setMorph(ease);
+      if (t < 1) raf = requestAnimationFrame(frame);
+    };
+    raf = requestAnimationFrame(frame);
+    return () => cancelAnimationFrame(raf);
+  }, [phase, reducedMotion, sky?.id]);
 
   useEffect(() => {
     if (!jump || reducedMotion) return;
@@ -121,7 +178,6 @@ export function ConstellationConnect() {
 
     const frame = (now: number) => {
       const t = Math.min(1, (now - start) / duration);
-      // Ease out cubic + parabolic hop
       const ease = 1 - (1 - t) ** 3;
       const x = from.x + (to.x - from.x) * ease;
       const yLinear = from.y + (to.y - from.y) * ease;
@@ -153,7 +209,7 @@ export function ConstellationConnect() {
   }
 
   function onStar(id: number) {
-    if (phase === "done") return;
+    if (!sky || phase === "done") return;
 
     if (phase === "ready") setPhase("playing");
 
@@ -166,7 +222,8 @@ export function ConstellationConnect() {
       if (upcoming > sky.stars.length) {
         setNextId(upcoming);
         setPhase("done");
-        setMessage(sky.fact);
+        const tip = tonightTip ? ` ${tonightTip}` : "";
+        setMessage(`${sky.fact}${tip}`);
       } else {
         setNextId(upcoming);
         setMessage(
@@ -194,7 +251,24 @@ export function ConstellationConnect() {
     }
   }
 
+  if (!hydrated || !session || !sky) {
+    return (
+      <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-5 py-10 text-center">
+        <p className="text-sm text-slate">Lining up tonight’s chart…</p>
+      </div>
+    );
+  }
+
   const linePoints = connected.map((s) => `${s.x},${s.y}`).join(" ");
+  const closedPoints =
+    sky.closeLoop && connected.length === sky.stars.length && sky.stars[0]
+      ? `${linePoints} ${sky.stars[0].x},${sky.stars[0].y}`
+      : linePoints;
+
+  const fieldOpacity = 0.15 + morph * 0.55;
+  const bgNight = 0.35 + morph * 0.55;
+  const glowBoost = 0.12 + morph * 0.22;
+  const done = phase === "done";
 
   return (
     <div className="flex flex-col gap-4">
@@ -202,11 +276,17 @@ export function ConstellationConnect() {
         <div>
           <h2 className="text-lg font-semibold text-white">Constellation connect</h2>
           <p className="mt-1 text-sm text-slate">
-            Connect-the-dots under a chill sky. Watch the little dog hop star to star.
+            Stars for{" "}
+            <span className="text-electric-dim">{country.name}</span> tonight
+            {session.usedFallback ? " (stylized fallback)" : ""} — connect in order, then watch
+            the sky settle into a picture.
+          </p>
+          <p className="mt-1 font-mono text-[0.65rem] text-slate-muted">
+            {sky.observerNote} · {sky.whenLabel} · approx. alt/az, not GPS
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {constellations.map((c, i) => (
+          {puzzles.map((c, i) => (
             <button
               key={c.id}
               type="button"
@@ -227,7 +307,7 @@ export function ConstellationConnect() {
       <div
         className={`relative overflow-hidden rounded-2xl border border-white/10 bg-navy-soft ${
           shake ? "ring-1 ring-lavender/40" : ""
-        }`}
+        } ${done ? "constellation-morph-done" : ""}`}
         role="application"
         aria-label={`${sky.name} constellation board`}
       >
@@ -239,55 +319,75 @@ export function ConstellationConnect() {
         >
           <title id={`${gid}-title`}>{sky.name}</title>
           <defs>
-            <radialGradient id={`${gid}-glow`} cx="50%" cy="40%" r="60%">
-              <stop offset="0%" stopColor="rgba(62,207,255,0.12)" />
+            <radialGradient id={`${gid}-glow`} cx="50%" cy="40%" r="65%">
+              <stop offset="0%" stopColor={`rgba(62,207,255,${glowBoost})`} />
+              <stop offset="55%" stopColor={`rgba(88,80,180,${morph * 0.12})`} />
               <stop offset="100%" stopColor="rgba(2,6,23,0)" />
             </radialGradient>
+            <radialGradient id={`${gid}-night`} cx="50%" cy="100%" r="80%">
+              <stop offset="0%" stopColor={`rgba(15,23,42,${bgNight})`} />
+              <stop offset="100%" stopColor="rgba(2,6,23,0)" />
+            </radialGradient>
+            <filter id={`${gid}-soft`} x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur stdDeviation={0.4 + morph * 0.6} result="blur" />
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
           </defs>
+
+          <rect width="100" height="100" fill={`url(#${gid}-night)`} />
           <rect width="100" height="100" fill={`url(#${gid}-glow)`} />
-          {[
-            [8, 12],
-            [90, 18],
-            [12, 88],
-            [94, 78],
-            [55, 12],
-            [40, 90],
-          ].map(([x, y], i) => (
+
+          {/* Horizon hush during morph */}
+          <ellipse
+            cx="50"
+            cy="108"
+            rx="70"
+            ry={12 + morph * 8}
+            fill={`rgba(15,23,42,${0.2 + morph * 0.45})`}
+          />
+
+          {sky.fieldStars.map((f, i) => (
             <circle
-              key={i}
-              cx={x}
-              cy={y}
-              r={0.45}
-              fill="rgba(248,250,252,0.35)"
-              className="animate-twinkle"
-              style={{ animationDelay: `${i * 0.35}s` }}
+              key={`f-${i}`}
+              cx={f.x}
+              cy={f.y}
+              r={f.r * (0.7 + morph * 0.6)}
+              fill={`rgba(248,250,252,${fieldOpacity * (0.5 + (i % 3) * 0.15)})`}
+              className={morph > 0.2 ? "animate-twinkle" : undefined}
+              style={{ animationDelay: `${(i % 9) * 0.28}s` }}
             />
           ))}
 
           {connected.length > 1 ? (
             <polyline
-              points={linePoints}
+              points={done && sky.closeLoop ? closedPoints : linePoints}
               fill="none"
-              stroke="rgba(62,207,255,0.75)"
-              strokeWidth="0.7"
+              stroke={`rgba(62,207,255,${0.55 + morph * 0.35})`}
+              strokeWidth={0.7 + morph * 0.35}
               strokeLinecap="round"
               strokeLinejoin="round"
+              filter={morph > 0.4 ? `url(#${gid}-soft)` : undefined}
             />
           ) : null}
 
           {sky.stars.map((star) => {
             const lit = star.id < nextId;
             const isNext = star.id === nextId && phase !== "done";
-            const done = phase === "done";
+            const settle = morph * 0.35;
             return (
               <g key={star.id}>
                 {(isNext || done) && (
                   <circle
                     cx={star.x}
                     cy={star.y}
-                    r={4.2}
+                    r={4.2 + morph * 1.2}
                     fill="none"
-                    stroke={done ? "rgba(212,196,253,0.45)" : "rgba(62,207,255,0.35)"}
+                    stroke={
+                      done ? `rgba(212,196,253,${0.35 + morph * 0.35})` : "rgba(62,207,255,0.35)"
+                    }
                     strokeWidth="0.5"
                     className={isNext ? "animate-pulse-glow" : undefined}
                   />
@@ -295,7 +395,7 @@ export function ConstellationConnect() {
                 <circle
                   cx={star.x}
                   cy={star.y}
-                  r={lit || done ? 2.4 : isNext ? 2.2 : 1.8}
+                  r={(lit || done ? 2.4 : isNext ? 2.2 : 1.8) + settle}
                   fill={
                     lit || done
                       ? "var(--electric)"
@@ -303,8 +403,9 @@ export function ConstellationConnect() {
                         ? "var(--electric-dim)"
                         : "rgba(248,250,252,0.7)"
                   }
+                  filter={done ? `url(#${gid}-soft)` : undefined}
                   className="cursor-pointer"
-                  tabIndex={0}
+                  tabIndex={done ? -1 : 0}
                   role="button"
                   aria-label={`${star.label ?? `Star ${star.id}`}${
                     isNext ? ", next" : lit ? ", connected" : ""
@@ -312,13 +413,13 @@ export function ConstellationConnect() {
                   onClick={() => onStar(star.id)}
                   onKeyDown={(e) => onKeyStar(e, star.id)}
                 />
-                {star.label ? (
+                {star.label && (isNext || lit || done) ? (
                   <text
                     x={star.x}
-                    y={star.y - 5}
+                    y={star.y - 5 - morph}
                     textAnchor="middle"
-                    fill="rgba(168,182,200,0.9)"
-                    fontSize="2.6"
+                    fill={`rgba(168,182,200,${0.55 + morph * 0.4})`}
+                    fontSize={2.4 + morph * 0.4}
                     className="pointer-events-none select-none"
                   >
                     {star.label}
@@ -328,11 +429,38 @@ export function ConstellationConnect() {
             );
           })}
 
-          {dogPos ? <JumpDog x={dogPos.x} y={dogPos.y} facing={dogPos.facing} /> : null}
+          {dogPos && !done ? <JumpDog x={dogPos.x} y={dogPos.y} facing={dogPos.facing} /> : null}
+
+          {/* Morph caption inside the sky picture */}
+          {done ? (
+            <g opacity={0.35 + morph * 0.65} className="pointer-events-none">
+              <text
+                x="50"
+                y="10"
+                textAnchor="middle"
+                fill="rgba(226,232,240,0.95)"
+                fontSize="3.2"
+                fontWeight="600"
+              >
+                {sky.name}
+              </text>
+              <text
+                x="50"
+                y="14.5"
+                textAnchor="middle"
+                fill="rgba(168,182,200,0.9)"
+                fontSize="2.2"
+              >
+                tonight · {sky.whenLabel}
+              </text>
+            </g>
+          ) : null}
         </svg>
 
         <div className="absolute inset-x-0 bottom-0 border-t border-white/5 bg-navy/70 px-4 py-3 backdrop-blur-sm">
-          <p className="text-xs font-medium text-electric-dim">{sky.name}</p>
+          <p className="text-xs font-medium text-electric-dim">
+            {done ? `Night picture · ${sky.name}` : sky.name}
+          </p>
           <p
             className={`mt-1 text-sm leading-relaxed ${
               phase === "done" ? "text-lavender" : "text-slate"
@@ -347,7 +475,9 @@ export function ConstellationConnect() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="font-mono text-xs text-slate-muted">
           {phase === "done"
-            ? "Constellation complete"
+            ? sky.projected
+              ? "Tonight’s sky picture settled"
+              : "Constellation complete (classic chart)"
             : `Progress ${Math.min(nextId - 1, sky.stars.length)} / ${sky.stars.length}`}
         </p>
         <button

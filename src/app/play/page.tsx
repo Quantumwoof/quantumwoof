@@ -18,7 +18,7 @@ export default function PlayPage() {
         <h1 className="text-3xl font-semibold tracking-tight text-white">Woof games</h1>
         <p className="mt-2 max-w-2xl text-slate">
           Two small diversions for when the notes can wait. No high scores that matter — just
-          a bit of sky and light. Country first so tonight’s vibe stays honest.{" "}
+          a bit of sky and light. Country first so Constellation Connect can aim at tonight’s sky.{" "}
           <Link href="/" className="text-electric hover:underline">
             Back to the garden
           </Link>

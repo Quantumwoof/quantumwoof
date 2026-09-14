@@ -4,7 +4,7 @@ const games = [
   {
     href: "/play#constellation",
     title: "Constellation connect",
-    blurb: "Trace the stars in order. A quiet connect-the-dots under night sky.",
+    blurb: "Connect tonight’s stars for your country, then watch them settle into a night-sky picture.",
     tag: "Focus",
   },
   {

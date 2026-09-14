@@ -425,3 +425,14 @@ body {
     animation: none !important;
   }
 }
+
+/* Constellation Connect — finish morph into night-sky picture */
+.constellation-morph-done {
+  box-shadow: inset 0 0 48px rgba(62, 207, 255, 0.08), 0 0 0 1px rgba(212, 196, 253, 0.12);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .constellation-morph-done {
+    transition: none;
+  }
+}
