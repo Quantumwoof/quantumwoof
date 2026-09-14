@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { FetchDogBg } from "@/components/FetchDogBg";
 import { Footer } from "@/components/Footer";
@@ -17,18 +17,38 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+export const viewport: Viewport = {
+  themeColor: "#020617",
+};
+
 export const metadata: Metadata = {
   metadataBase: new URL("http://localhost:3000"),
+  applicationName: "Quantumwoof",
   title: site.title,
   description: site.description,
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Quantumwoof",
+  },
   icons: {
-    icon: "/hosky-mark.png",
-    apple: "/hosky-mark.png",
+    icon: [
+      { url: "/hosky-mark.png" },
+      { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: [
+      { url: "/icons/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
+    ],
   },
   openGraph: {
     title: site.title,
     description: site.description,
     images: ["/hosky-mark.png"],
+  },
+  other: {
+    "mobile-web-app-capable": "yes",
   },
 };
 
