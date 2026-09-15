@@ -16,8 +16,9 @@ export type CountryOption = {
 };
 
 /**
- * Curated short list — Lagos-friendly default when unset.
+ * Curated short list for the country picker.
  * Lat/lon are country approximations (not GPS); good enough for garden-scale alt/az.
+ * Do not treat the first entry as the visitor's country until they pick.
  */
 export const COUNTRIES: CountryOption[] = [
   { code: "NG", name: "Nigeria", hemisphere: "north", lat: 6.45, lon: 3.4, timezone: "Africa/Lagos" },
@@ -68,7 +69,10 @@ export const COUNTRIES: CountryOption[] = [
 
 export const COUNTRY_STORAGE_KEY = "qw-country";
 
-/** Default: northern tropics / Lagos-friendly when unknown. */
+/**
+ * Library / API fallback for *invalid* codes only — not an assumed visitor country.
+ * UI must not treat an unset `qw-country` as NG.
+ */
 export const DEFAULT_COUNTRY_CODE = "NG";
 
 export function getCountryByCode(code: string | null | undefined): CountryOption {

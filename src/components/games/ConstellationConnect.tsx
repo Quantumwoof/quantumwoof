@@ -117,9 +117,9 @@ export function ConstellationConnect() {
   const reducedMotion = usePrefersReducedMotion();
 
   const session = useMemo(() => {
-    if (!hydrated) return null;
-    return buildTonightSkySession(code ?? country.code, hemisphere);
-  }, [hydrated, code, country.code, hemisphere]);
+    if (!hydrated || !code || !hemisphere) return null;
+    return buildTonightSkySession(code, hemisphere);
+  }, [hydrated, code, hemisphere]);
 
   const puzzles = session?.puzzles ?? [];
   const [screen, setScreen] = useState<Screen>("pick");
@@ -146,7 +146,7 @@ export function ConstellationConnect() {
   }, [puzzleIndex, puzzles.length]);
 
   const tonightTip = useMemo(() => {
-    if (!sky) return null;
+    if (!sky || !hemisphere) return null;
     const entries = getTonightStars(hemisphere);
     const hit = entries.find(
       (e) =>
@@ -354,7 +354,7 @@ export function ConstellationConnect() {
     }
   }
 
-  if (!hydrated || !session) {
+  if (!hydrated || !session || !country || !hemisphere) {
     return (
       <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-5 py-10 text-center">
         <p className="text-sm text-slate">Lining up tonight’s chart…</p>

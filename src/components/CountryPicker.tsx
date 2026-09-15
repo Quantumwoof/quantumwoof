@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { COUNTRIES } from "@/lib/country";
+import { COUNTRIES, DEFAULT_COUNTRY_CODE } from "@/lib/country";
 import { useCountry } from "@/hooks/useCountry";
 
 type Props = {
@@ -24,7 +24,8 @@ export function CountryPicker({
 }: Props) {
   const { code, country, setCountry, needsPrompt, hydrated } = useCountry();
   const [query, setQuery] = useState("");
-  const [draft, setDraft] = useState(code ?? "NG");
+  /** Draft for modal only — not treated as the user’s country until Save. */
+  const [draft, setDraft] = useState(code ?? "");
   const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
@@ -45,6 +46,7 @@ export function CountryPicker({
   }, [query]);
 
   function save(next: string) {
+    if (!next) return;
     setCountry(next);
     setDraft(next);
     setDismissed(true);
@@ -59,13 +61,35 @@ export function CountryPicker({
         </span>
       );
     }
+    if (!code) {
+      return (
+        <label className="inline-flex items-center gap-1.5 rounded-full border border-electric/35 bg-electric/10 px-2.5 py-1 text-[0.65rem] text-electric-dim">
+          <span className="text-slate-muted">From</span>
+          <select
+            aria-label="Where are you watching from?"
+            className="max-w-[10.5rem] cursor-pointer bg-transparent font-medium text-electric-dim outline-none"
+            value=""
+            onChange={(e) => save(e.target.value)}
+          >
+            <option value="" disabled className="bg-navy-card text-slate-muted">
+              Pick country…
+            </option>
+            {COUNTRIES.map((c) => (
+              <option key={c.code} value={c.code} className="bg-navy-card text-white">
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      );
+    }
     return (
       <label className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.045] px-2.5 py-1 text-[0.65rem] text-slate">
         <span className="text-slate-muted">From</span>
         <select
           aria-label="Country for sky"
           className="max-w-[9.5rem] cursor-pointer bg-transparent font-medium text-electric-dim outline-none"
-          value={code ?? "NG"}
+          value={code}
           onChange={(e) => save(e.target.value)}
         >
           {COUNTRIES.map((c) => (
@@ -82,28 +106,39 @@ export function CountryPicker({
     return (
       <div className="flex flex-wrap items-center gap-2">
         <label className="text-xs text-slate-muted" htmlFor="qw-country-inline">
-          Country
+          {code ? "Country" : "Where are you watching from?"}
         </label>
         <select
           id="qw-country-inline"
           className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-white outline-none transition hover:border-electric/40 focus:border-electric/50"
-          value={code ?? "NG"}
+          value={code ?? ""}
           onChange={(e) => save(e.target.value)}
         >
+          {!code ? (
+            <option value="" disabled className="bg-navy-card text-slate-muted">
+              Pick country…
+            </option>
+          ) : null}
           {COUNTRIES.map((c) => (
             <option key={c.code} value={c.code} className="bg-navy-card">
               {c.name}
             </option>
           ))}
         </select>
-        <span className="text-[0.65rem] text-slate-muted">
-          {country.hemisphere === "south" ? "Southern sky" : "Northern sky"}
-        </span>
+        {country ? (
+          <span className="text-[0.65rem] text-slate-muted">
+            {country.hemisphere === "south" ? "Southern sky" : "Northern sky"}
+          </span>
+        ) : (
+          <span className="text-[0.65rem] text-slate-muted">Choose so tips match your sky</span>
+        )}
       </div>
     );
   }
 
   if (!showModal) return null;
+
+  const canSave = Boolean(draft);
 
   return (
     <div
@@ -143,6 +178,11 @@ export function CountryPicker({
           onChange={(e) => setDraft(e.target.value)}
           className="mt-1.5 w-full rounded-xl border border-white/10 bg-navy-soft px-2 py-2 text-sm text-white outline-none focus:border-electric/40"
         >
+          {!draft ? (
+            <option value="" disabled>
+              Pick a country…
+            </option>
+          ) : null}
           {filtered.map((c) => (
             <option key={c.code} value={c.code}>
               {c.name} · {c.hemisphere === "south" ? "S" : "N"}
@@ -154,7 +194,7 @@ export function CountryPicker({
           <button
             type="button"
             onClick={() => {
-              save("NG");
+              save(DEFAULT_COUNTRY_CODE);
             }}
             className="rounded-full px-3 py-1.5 text-xs text-slate-muted transition hover:text-white"
           >
@@ -162,8 +202,9 @@ export function CountryPicker({
           </button>
           <button
             type="button"
+            disabled={!canSave}
             onClick={() => save(draft)}
-            className="rounded-full border border-electric/40 bg-electric/15 px-4 py-2 text-sm font-medium text-electric-dim transition hover:bg-electric/25"
+            className="rounded-full border border-electric/40 bg-electric/15 px-4 py-2 text-sm font-medium text-electric-dim transition hover:bg-electric/25 disabled:cursor-not-allowed disabled:opacity-40"
           >
             Save & continue
           </button>

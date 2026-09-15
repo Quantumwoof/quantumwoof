@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import {
   COUNTRY_STORAGE_KEY,
-  DEFAULT_COUNTRY_CODE,
   getCountryByCode,
   hemisphereForCountry,
   readStoredCountryCode,
@@ -36,6 +35,10 @@ function notifyCountryChange() {
   window.dispatchEvent(new Event("qw-country-change"));
 }
 
+/**
+ * Country for sky / games. `code` stays null until the visitor explicitly
+ * picks one (localStorage `qw-country`). Never pretends they chose NG.
+ */
 export function useCountry() {
   const code = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   const [hydrated, setHydrated] = useState(false);
@@ -49,18 +52,19 @@ export function useCountry() {
     notifyCountryChange();
   }, []);
 
-  const country: CountryOption = getCountryByCode(code ?? DEFAULT_COUNTRY_CODE);
-  const hemisphere: Hemisphere = hemisphereForCountry(code ?? DEFAULT_COUNTRY_CODE);
   const hasCountry = hydrated && code !== null;
+  const country: CountryOption | null = code ? getCountryByCode(code) : null;
+  const hemisphere: Hemisphere | null = code ? hemisphereForCountry(code) : null;
 
   return {
-    code: code ?? (hydrated ? DEFAULT_COUNTRY_CODE : null),
+    /** Stored code only — null until an explicit pick. */
+    code,
     country,
     hemisphere,
     hasCountry,
     hydrated,
     setCountry,
-    /** True when user has explicitly chosen (or we treat default as set after prompt). */
+    /** True after hydrate when localStorage has no valid country yet. */
     needsPrompt: hydrated && code === null,
   };
 }
