@@ -281,28 +281,27 @@ export function ConstellationConnect() {
     setJump(null);
     setDogPos(null);
     setMorph(reducedMotion ? 1 : 0);
-    const names = puzzles.map((p) => p.name).join(" · ");
-    setMessage(
-      `Soft howl — tonight’s sky, all together. ${names}. Sit with it a breath; the dots already know each other.`,
-    );
+    setMessage("Soft howl — tonight’s sky, all together. Sit with the picture a breath.");
   }
 
-  function advanceToNext(fromIndex: number) {
-    const next = fromIndex + 1;
+  /** After a completed shape: next puzzle, or shared finale after the last. */
+  function continueSession() {
+    clearAdvanceTimer();
+    const next = puzzleIndex + 1;
     if (next >= puzzles.length) {
       enterFinale();
       return;
     }
     const upcoming = puzzles[next]!;
-    setPhase("between");
-    setMessage(`Nice hop. Next — ${upcoming.name} (${next + 1} of ${puzzles.length}).`);
-    const delay = reducedMotion ? 280 : 1100;
+    setPuzzleIndex(next);
+    resetBoardState(upcoming.hint);
+    setScreen("play");
+  }
+
+  function resetCurrent() {
+    if (!sky) return;
     clearAdvanceTimer();
-    advanceTimer.current = window.setTimeout(() => {
-      setPuzzleIndex(next);
-      resetBoardState(upcoming.hint);
-      setScreen("play");
-    }, delay);
+    resetBoardState(sky.hint);
   }
 
   function onStar(id: number) {
@@ -319,18 +318,15 @@ export function ConstellationConnect() {
       const upcoming = nextId + 1;
       if (upcoming > sky.stars.length) {
         setNextId(upcoming);
-        setPhase("done");
+        setPhase("between");
         const tip = tonightTip ? ` ${tonightTip}` : "";
         const isLast = puzzleIndex >= puzzles.length - 1;
-        if (isLast) {
-          setMessage(`${sky.fact}${tip} Gathering tonight’s picture…`);
-          const delay = reducedMotion ? 200 : 900;
-          clearAdvanceTimer();
-          advanceTimer.current = window.setTimeout(() => enterFinale(), delay);
-        } else {
-          setMessage(`${sky.fact}${tip}`);
-          advanceToNext(puzzleIndex);
-        }
+        const nextName = !isLast ? puzzles[puzzleIndex + 1]?.name : null;
+        setMessage(
+          isLast
+            ? `${sky.fact}${tip} Continue for tonight’s shared picture, or Reset to hop this shape again.`
+            : `${sky.fact}${tip} Continue to ${nextName}, or Reset to redo ${sky.name}.`,
+        );
       } else {
         setNextId(upcoming);
         setMessage(
@@ -595,13 +591,13 @@ export function ConstellationConnect() {
               </text>
             </g>
           </svg>
+        </div>
 
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 border-t border-white/5 bg-navy/70 px-4 py-3 backdrop-blur-sm">
-            <p className="text-xs font-medium text-electric-dim">Night picture · all together</p>
-            <p className="mt-1 text-sm leading-relaxed text-lavender" aria-live="polite">
-              {message}
-            </p>
-          </div>
+        <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
+          <p className="text-xs font-medium text-electric-dim">Night picture · all together</p>
+          <p className="mt-1 text-sm leading-relaxed text-lavender" aria-live="polite">
+            {message}
+          </p>
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -799,32 +795,30 @@ export function ConstellationConnect() {
 
           {dogPos && !doneBeat ? <JumpDog x={dogPos.x} y={dogPos.y} facing={dogPos.facing} /> : null}
         </svg>
+      </div>
 
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 border-t border-white/5 bg-navy/70 px-4 py-3 backdrop-blur-sm">
-          <p className="text-xs font-medium text-electric-dim">
-            {sky.name}
-            <span className="ml-2 font-mono text-slate-muted">{progressLabel}</span>
-          </p>
-          <p
-            className={`mt-1 text-sm leading-relaxed ${
-              doneBeat ? "text-lavender" : "text-slate"
-            }`}
-            aria-live="polite"
-          >
-            {message}
-          </p>
-        </div>
+      <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
+        <p className="text-xs font-medium text-electric-dim">
+          {sky.name}
+          <span className="ml-2 font-mono text-slate-muted">{progressLabel}</span>
+        </p>
+        <p
+          className={`mt-1 text-sm leading-relaxed ${
+            doneBeat ? "text-lavender" : "text-slate"
+          }`}
+          aria-live="polite"
+        >
+          {message}
+        </p>
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="font-mono text-xs text-slate-muted">
           {between
-            ? "Continuing…"
-            : phase === "done"
-              ? puzzleIndex >= puzzles.length - 1
-                ? "Opening night picture…"
-                : "Shape complete"
-              : `Stars ${Math.min(nextId - 1, sky.stars.length)} / ${sky.stars.length} · ${progressLabel}`}
+            ? puzzleIndex >= puzzles.length - 1
+              ? "Shape complete · continue for night picture"
+              : "Shape complete · continue or reset"
+            : `Stars ${Math.min(nextId - 1, sky.stars.length)} / ${sky.stars.length} · ${progressLabel}`}
         </p>
         <div className="flex flex-wrap gap-2">
           <button
@@ -834,16 +828,32 @@ export function ConstellationConnect() {
           >
             Change constellation
           </button>
-          <button
-            type="button"
-            onClick={() => {
-              clearAdvanceTimer();
-              resetBoardState(sky.hint);
-            }}
-            className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-white transition hover:border-electric/40 hover:bg-electric/10"
-          >
-            Reset
-          </button>
+          {between ? (
+            <>
+              <button
+                type="button"
+                onClick={resetCurrent}
+                className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-white transition hover:border-electric/40 hover:bg-electric/10"
+              >
+                Reset
+              </button>
+              <button
+                type="button"
+                onClick={continueSession}
+                className="rounded-full border border-electric/40 bg-electric/15 px-4 py-1.5 text-xs font-semibold text-electric-dim transition hover:bg-electric/25"
+              >
+                {puzzleIndex >= puzzles.length - 1 ? "Continue to night picture" : "Continue"}
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={resetCurrent}
+              className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-white transition hover:border-electric/40 hover:bg-electric/10"
+            >
+              Reset
+            </button>
+          )}
         </div>
       </div>
     </div>
