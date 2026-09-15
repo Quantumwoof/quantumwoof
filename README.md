@@ -31,7 +31,7 @@ Edit `src/content/site.ts`:
 - `contact.email` (placeholder: `hello@quantumwoof.io`)
 - `domainNote` when you point a real domain later
 
-Sample blog posts live in `src/content/notes.ts`.
+Field notes live in `src/content/sky/notes.ts` (re-exported via `src/content/notes.ts` for routes).
 
 ## Brand mark
 

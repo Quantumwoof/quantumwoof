@@ -12,11 +12,9 @@ export default function NotesPage() {
       <p className="card-label mb-2">Garden paths</p>
       <h1 className="text-3xl font-semibold tracking-tight text-white">Notes</h1>
       <p className="mt-2 text-slate">
-        Sample posts for the garden. Replace or extend in{" "}
-        <code className="rounded bg-white/5 px-1.5 py-0.5 text-sm text-electric-dim">
-          src/content/notes.ts
-        </code>
-        .
+        Field notes from the porch — short trails on sky, curiosity, and the
+        occasional snack-shaped metaphor. Pull up a card; stay as long as the
+        wonder lasts.
       </p>
       <ul className="mt-8 space-y-4">
         {notes.map((note) => (
