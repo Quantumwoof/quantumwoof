@@ -18,7 +18,7 @@ function rand(min: number, max: number) {
   return min + Math.random() * (max - min);
 }
 
-export function FetchPhoton() {
+export function FetchPhoton({ compact = false }: { compact?: boolean } = {}) {
   const arenaRef = useRef<HTMLDivElement>(null);
   const [phase, setPhase] = useState<Phase>("idle");
   const [score, setScore] = useState(0);
@@ -170,12 +170,16 @@ export function FetchPhoton() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold text-white">Fetch the photon</h2>
-          <p className="mt-1 text-sm text-slate">
-            Short rounds. Catch the rising blip — tasteful reflexes, not arcade noise.
-          </p>
-        </div>
+        {!compact ? (
+          <div>
+            <h2 className="text-lg font-semibold text-white">Fetch the photon</h2>
+            <p className="mt-1 text-sm text-slate">
+              Short rounds. Catch the rising blip — tasteful reflexes, not arcade noise.
+            </p>
+          </div>
+        ) : (
+          <div />
+        )}
         <div className="flex gap-4 font-mono text-xs text-slate-muted">
           <span>
             Score{" "}

@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import { useWoofProgress } from "@/hooks/useWoofProgress";
+import { CertShareCard } from "@/components/school/CertShareCard";
 import { WooftagMint } from "@/components/school/WooftagMint";
 
 const NAME_KEY = "quantumwoof.woof-school.sniffer-name";
@@ -54,7 +55,7 @@ export function SnifferCertificate() {
         aria-hidden
       />
       <p className="card-label relative mb-2">Certificate sticker</p>
-      <div className="relative grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] lg:items-center">
+      <div className="relative grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] lg:items-start">
         <div className="relative aspect-[4/3] overflow-hidden rounded-2xl border border-lavender/30 bg-[#0a1224]">
           <Image
             src="/woof-school/nebula-sniffer-cert.jpeg"
@@ -107,6 +108,13 @@ export function SnifferCertificate() {
           <p className="mt-4 font-mono text-xs text-slate-muted">
             Hosky · QuantumWoof · open campus · not a boring diploma
           </p>
+
+          <CertShareCard
+            name={name}
+            dateLabel={dateLabel}
+            woofedCount={woofedCount}
+            totalTopics={totalTopics}
+          />
 
           <WooftagMint />
         </div>

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useWoofProgress } from "@/hooks/useWoofProgress";
 import {
@@ -12,9 +13,10 @@ import {
 
 const TAG_KEY = "quantumwoof.wooftag.v1";
 const QUEUE_KEY = "quantumwoof.wooftag.queue.v1";
+const NAME_KEY = "quantumwoof.woof-school.sniffer-name";
+const DATE_KEY = "quantumwoof.woof-school.sniffer-date";
 
 type SavedTag = { tag: string; mintedAt: string };
-
 
 type MintRes = {
   ok: boolean;
@@ -50,6 +52,17 @@ function writeSaved(tag: SavedTag) {
   window.localStorage.setItem(TAG_KEY, JSON.stringify(tag));
 }
 
+function readSnifferMeta(): { name: string; dateLabel: string } {
+  try {
+    return {
+      name: window.localStorage.getItem(NAME_KEY) ?? "",
+      dateLabel: window.localStorage.getItem(DATE_KEY) ?? "",
+    };
+  } catch {
+    return { name: "", dateLabel: "" };
+  }
+}
+
 export function WooftagMint() {
   const { ready, isSniffer, progress, startedAt } = useWoofProgress();
   const [saved, setSaved] = useState<SavedTag | null>(null);
@@ -61,16 +74,14 @@ export function WooftagMint() {
   );
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
-  const [revealed, setRevealed] = useState(true);
+  const [meta, setMeta] = useState({ name: "", dateLabel: "" });
   const startedRef = useRef(false);
 
   useEffect(() => {
     if (!ready) return;
     const existing = readSaved();
-    if (existing) {
-      setSaved(existing);
-      setRevealed(true);
-    }
+    if (existing) setSaved(existing);
+    setMeta(readSnifferMeta());
     try {
       const q = window.localStorage.getItem(QUEUE_KEY);
       if (q) setQueue({ token: q });
@@ -108,7 +119,6 @@ export function WooftagMint() {
         await fetch("/api/wooftag/status");
         if (cancelled) return;
 
-        // Soft gate: wait out the server min-age so we don't look like a script.
         await new Promise((r) => setTimeout(r, WOOFTAG_MIN_GATE_MS + 400));
         if (cancelled) return;
 
@@ -152,7 +162,7 @@ export function WooftagMint() {
           setSaved(rec);
           setQueue(null);
           setPhase("idle");
-          setRevealed(true);
+          setMeta(readSnifferMeta());
           return;
         }
 
@@ -193,71 +203,101 @@ export function WooftagMint() {
 
   // Status / mint APIs may still return minted/remaining/cap for ops — never show those to visitors.
 
+  if (saved) {
+    const snifferName = meta.name.trim() || "sniffer";
+    return (
+      <div className="mt-6 space-y-3">
+        <div className="rounded-2xl border border-lavender/35 bg-lavender/[0.07] p-4 sm:p-5">
+          <p className="card-label mb-1 text-lavender">Nebula Sniffer</p>
+          <h3 className="text-lg font-semibold text-white sm:text-xl">
+            You&apos;re sniffed, {snifferName}
+          </h3>
+          <p className="mt-1 text-sm text-slate">
+            Cert unlocked{meta.dateLabel ? ` · ${meta.dateLabel}` : ""}
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-electric/30 bg-electric/[0.06] p-4 sm:p-5">
+          <p className="card-label mb-1 text-gold">Your Wooftag</p>
+          <p className="break-all font-mono text-base tracking-wide text-white sm:text-lg">
+            {saved.tag}
+          </p>
+          <p className="mt-3 inline-flex rounded-full border border-lavender/30 bg-lavender/10 px-2.5 py-0.5 text-xs text-lavender">
+            Issued · {WOOFTAG_CLAIM_LATER.toLowerCase()}
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 sm:p-5">
+          <p className="card-label mb-3 text-slate-muted">What&apos;s next</p>
+          <ol className="space-y-2.5">
+            <li className="flex items-center gap-3 text-sm text-white">
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-500/90 text-xs font-bold text-navy">
+                1
+              </span>
+              Sniffed
+            </li>
+            <li className="flex items-center gap-3 text-sm text-white">
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-lavender text-xs font-bold text-navy">
+                2
+              </span>
+              Tag issued — keep it safe
+            </li>
+            <li className="flex items-center gap-3 text-sm text-white">
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-white/20 bg-white/5 text-xs font-bold text-slate-muted">
+                3
+              </span>
+              Claim later → tip 1B Quantumwoof
+            </li>
+          </ol>
+          <p className="mt-3 text-xs text-slate-muted">
+            A thank-you tip later — not earnings.
+          </p>
+        </div>
+
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <button
+            type="button"
+            onClick={() => void copyTag(saved.tag)}
+            className="inline-flex flex-1 items-center justify-center rounded-full bg-lavender px-4 py-2.5 text-sm font-semibold text-navy transition hover:bg-lavender-soft"
+          >
+            {copied ? "Copied" : "Copy Wooftag"}
+          </button>
+          <Link
+            href="/school"
+            className="inline-flex flex-1 items-center justify-center rounded-full border border-white/15 bg-white/[0.04] px-4 py-2.5 text-sm font-semibold text-white transition hover:border-electric/35"
+          >
+            Back to campus
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="mt-6 rounded-2xl border border-electric/30 bg-electric/[0.07] p-4 sm:p-5">
       <p className="card-label mb-1">Wooftag · Hosky’s tip</p>
       <h3 className="text-lg font-semibold text-white">Issue only — not a Cardano send</h3>
       <p className="mt-1 text-sm leading-relaxed text-slate">{WOOFTAG_TIP_COPY}</p>
 
-      {saved ? (
-        <div className="mt-4">
-          <p className="text-xs uppercase tracking-wide text-slate-muted">
-            {revealed ? "Your Wooftag (this browser kept a copy)" : "Hidden — still saved here"}
-          </p>
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <p
-              className="rounded-xl border border-white/15 bg-navy-soft px-3 py-2 font-mono text-sm tracking-wide text-electric"
-              aria-live="polite"
-            >
-              {revealed ? saved.tag : "WOOF-••••-••••-••••-••••"}
-            </p>
-            <button
-              type="button"
-              onClick={() => void copyTag(saved.tag)}
-              className="rounded-full bg-electric px-3 py-1.5 text-sm font-semibold text-navy transition hover:bg-electric-dim"
-            >
-              {copied ? "Copied" : "Copy"}
-            </button>
-            <button
-              type="button"
-              onClick={() => setRevealed((v) => !v)}
-              className="rounded-full border border-white/20 px-3 py-1.5 text-sm text-white transition hover:border-electric/40"
-            >
-              {revealed ? "Hide" : "Show"}
-            </button>
-          </div>
-          <p className="mt-2 text-xs text-slate-muted">
-            Hosky prints plaintext once. Server stores only a hash.{" "}
-            <span className="text-lavender">{WOOFTAG_CLAIM_LATER}</span>
-          </p>
-        </div>
-      ) : null}
-
-      {!saved && phase === "waiting" ? (
+      {phase === "waiting" ? (
         <p className="mt-4 text-sm text-slate">Warming the stamp pad…</p>
       ) : null}
-      {!saved && phase === "stamping" ? (
+      {phase === "stamping" ? (
         <p className="mt-4 text-sm text-electric">Stamping your Wooftag…</p>
       ) : null}
-      {!saved && phase === "queued" ? (
+      {phase === "queued" ? (
         <div className="mt-4 rounded-xl border border-lavender/35 bg-lavender/10 px-3 py-2 text-sm text-lavender">
           <p>{WOOFTAG_BOWL_FULL}</p>
-          {queue?.position ? (
-            <p className="mt-1 font-mono text-xs text-slate">
-              Queue spot {queue.position} · come back after 00:00 UTC
-            </p>
-          ) : (
-            <p className="mt-1 font-mono text-xs text-slate">Come back after 00:00 UTC</p>
-          )}
+          <p className="mt-1 font-mono text-xs text-slate">Come back after 00:00 UTC</p>
         </div>
       ) : null}
-      {!saved && phase === "already" ? (
+      {phase === "already" ? (
         <p className="mt-4 text-sm text-slate">
           This browser already sniffed a Wooftag. If you don’t see it, the local copy was
           cleared — Hosky doesn’t reprint.
         </p>
       ) : null}
-      {!saved && phase === "error" ? (
+      {phase === "error" ? (
         <p className="mt-4 text-sm text-lavender">{error}</p>
       ) : null}
     </div>

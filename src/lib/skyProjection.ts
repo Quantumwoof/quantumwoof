@@ -294,3 +294,35 @@ export function buildTonightSkySession(
 export function listStylizedIds(): string[] {
   return STYLIZED_CONSTELLATIONS.map((c) => c.id);
 }
+
+
+/** Shared home↔play shortlist: same constellation names as Connect’s tonight’s few. */
+export type TonightShortlistItem = {
+  id: string;
+  name: string;
+  tip: string;
+  fromSky: boolean;
+};
+
+export function getTonightShortlist(
+  countryCode: string | null | undefined,
+  hemisphere: Hemisphere,
+  ref: Date = new Date(),
+): TonightShortlistItem[] {
+  const session = buildTonightSkySession(countryCode, hemisphere, ref);
+  const tips = getTonightStars(hemisphere, ref);
+  return session.puzzles.map((pz) => {
+    const hit = tips.find(
+      (e) =>
+        e.name.toLowerCase() === pz.name.toLowerCase() ||
+        pz.name.toLowerCase().includes(e.name.toLowerCase()) ||
+        e.name.toLowerCase().includes(pz.name.toLowerCase().split(" ")[0] ?? ""),
+    );
+    return {
+      id: pz.id,
+      name: pz.name,
+      tip: hit?.tip ?? pz.shapeNote ?? pz.fact,
+      fromSky: pz.fromSky,
+    };
+  });
+}

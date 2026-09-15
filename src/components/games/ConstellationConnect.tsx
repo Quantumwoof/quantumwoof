@@ -395,6 +395,17 @@ export function ConstellationConnect() {
           )}
         </div>
 
+        <div className="flex flex-wrap gap-2" aria-label="Tonight’s constellation chips">
+          {puzzles.map((c) => (
+            <span
+              key={`chip-${c.id}`}
+              className="rounded-full border border-white/12 bg-white/[0.06] px-3 py-1 text-sm text-white"
+            >
+              {c.name}
+            </span>
+          ))}
+        </div>
+
         <ol className="grid gap-3 sm:grid-cols-2" aria-label="Tonight’s constellation lineup">
           {puzzles.map((c, i) => (
             <li key={c.id}>
@@ -423,14 +434,14 @@ export function ConstellationConnect() {
           ))}
         </ol>
 
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-col gap-3">
           <p className="text-xs text-slate-muted">
             Continuous run · finish with a shared night picture of all {puzzles.length}.
           </p>
           <button
             type="button"
             onClick={startTonight}
-            className="rounded-full border border-electric/40 bg-electric/15 px-5 py-2 text-sm font-semibold text-electric-dim transition hover:bg-electric/25"
+            className="inline-flex w-full items-center justify-center rounded-full bg-lavender px-5 py-3 text-sm font-semibold text-navy transition hover:bg-lavender-soft sm:w-auto"
           >
             Start tonight&apos;s sky
           </button>

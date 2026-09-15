@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { BentoCard } from "@/components/BentoCard";
 import { PlayCountryGate } from "@/components/PlayCountryGate";
 import { ConstellationConnect } from "@/components/games/ConstellationConnect";
 import { FetchPhoton } from "@/components/games/FetchPhoton";
@@ -17,8 +16,8 @@ export default function PlayPage() {
         <p className="card-label mb-2">Optional recess</p>
         <h1 className="text-3xl font-semibold tracking-tight text-white">Woof games</h1>
         <p className="mt-2 max-w-2xl text-slate">
-          Two small diversions for when the notes can wait. No high scores that matter — just
-          a bit of sky and light. Country first so Constellation Connect can aim at tonight’s sky.{" "}
+          Same sky language as School. Constellation Connect is the star — Photon sits quieter.
+          Country first so tonight’s few stay honest.{" "}
           <Link href="/" className="text-electric hover:underline">
             Back to the garden
           </Link>
@@ -26,13 +25,29 @@ export default function PlayPage() {
       </div>
 
       <PlayCountryGate>
-        <BentoCard label="Sky homework" id="constellation">
+        {/* Primary — Constellation Connect */}
+        <section
+          id="constellation"
+          className="bento-card border-lavender/40 p-4 sm:p-6"
+        >
+          <p className="card-label mb-2 text-lavender">Tonight&apos;s few</p>
           <ConstellationConnect />
-        </BentoCard>
+        </section>
 
-        <BentoCard label="Optics lab" id="photon">
-          <FetchPhoton />
-        </BentoCard>
+        {/* Secondary — Fetch the Photon */}
+        <section
+          id="photon"
+          className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 sm:p-5"
+        >
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="card-label mb-1 text-slate-muted">Also play</p>
+              <h2 className="text-base font-semibold text-white">Fetch the Photon</h2>
+              <p className="text-xs text-slate-muted">Quick catch · secondary to Connect</p>
+            </div>
+          </div>
+          <FetchPhoton compact />
+        </section>
       </PlayCountryGate>
     </div>
   );

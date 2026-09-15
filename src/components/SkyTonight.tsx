@@ -1,18 +1,26 @@
 "use client";
 
+import Link from "next/link";
+import { useMemo } from "react";
 import { CountryPicker } from "@/components/CountryPicker";
-import { getTonightStars, seasonLabel } from "@/content/tonightStars";
+import { seasonLabel } from "@/content/tonightStars";
 import { useCountry } from "@/hooks/useCountry";
+import { getTonightShortlist } from "@/lib/skyProjection";
 
+/** Home “Tonight under your sky” — same constellation names as Play Connect. */
 export function SkyTonight() {
-  const { country, hemisphere, hydrated } = useCountry();
-  const entries = getTonightStars(hemisphere);
+  const { country, hemisphere, hydrated, code } = useCountry();
   const season = seasonLabel(hemisphere);
+
+  const shortlist = useMemo(() => {
+    if (!hydrated) return [];
+    return getTonightShortlist(code ?? country.code, hemisphere);
+  }, [hydrated, code, country.code, hemisphere]);
 
   return (
     <div className="relative overflow-hidden">
-      <div className="pointer-events-none absolute inset-0 opacity-40">
-        {[...Array(18)].map((_, i) => (
+      <div className="pointer-events-none absolute inset-0 opacity-35" aria-hidden>
+        {[...Array(14)].map((_, i) => (
           <span
             key={i}
             className="animate-twinkle absolute h-1 w-1 rounded-full bg-white"
@@ -24,44 +32,71 @@ export function SkyTonight() {
           />
         ))}
       </div>
-      <div className="relative">
-        <div className="mb-3 flex flex-wrap items-center gap-2">
-          <div className="inline-flex items-center gap-2 rounded-full border border-lavender/35 bg-lavender/[0.12] px-2.5 py-1 text-[0.65rem] font-semibold uppercase tracking-wider text-lavender">
-            Curated · no API
-          </div>
+      <div className="relative space-y-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="card-label mb-0 text-lavender">Tonight under your sky</p>
           <CountryPicker variant="chip" />
         </div>
-        <h2 className="text-lg font-semibold text-white">Tonight&apos;s stars</h2>
-        <p className="mt-1 text-sm text-slate">
-          {hydrated ? (
-            <>
-              A chill shortlist for{" "}
-              <span className="text-electric-dim">{country.name}</span> — {season}. Not live
-              ephemeris; just popular bright markers Hosky likes to point at.
-            </>
-          ) : (
-            <>A quiet sample chart lining up with your hemisphere…</>
-          )}
-        </p>
-        <ul className="mt-4 space-y-2">
-          {entries.map((s) => (
+
+        <div>
+          <h2 className="text-lg font-semibold text-white sm:text-xl">
+            {hydrated ? (
+              <>
+                Up for <span className="text-electric-dim">{country.name}</span> tonight
+              </>
+            ) : (
+              <>Lining up tonight&apos;s few…</>
+            )}
+          </h2>
+          <p className="mt-1 text-sm text-slate">
+            {hydrated ? (
+              <>
+                Same shapes you&apos;ll connect in Play — {season}. Short tips, not a topic dump.
+              </>
+            ) : (
+              <>A quiet shortlist for your hemisphere…</>
+            )}
+          </p>
+        </div>
+
+        {shortlist.length > 0 ? (
+          <div className="flex flex-wrap gap-2">
+            {shortlist.map((s) => (
+              <span
+                key={s.id}
+                className="rounded-full border border-white/12 bg-white/[0.06] px-3 py-1 text-sm text-white"
+              >
+                {s.name}
+              </span>
+            ))}
+          </div>
+        ) : null}
+
+        <ul className="space-y-2">
+          {shortlist.slice(0, 3).map((s) => (
             <li
-              key={s.name}
+              key={`tip-${s.id}`}
               className="flex items-start gap-3 rounded-xl border border-white/10 bg-white/[0.045] px-3 py-2.5"
             >
-              <span className="mt-0.5 text-electric">{s.kind === "constellation" ? "✧" : "✦"}</span>
+              <span className="mt-0.5 text-lavender" aria-hidden>
+                ✧
+              </span>
               <div>
-                <p className="text-sm font-medium text-white">
-                  {s.name}
-                  <span className="ml-2 font-mono text-[0.6rem] uppercase tracking-wider text-slate-muted">
-                    {s.kind}
-                  </span>
-                </p>
-                <p className="text-xs text-slate-muted">{s.tip}</p>
+                <p className="text-sm font-medium text-white">{s.name}</p>
+                <p className="text-xs leading-relaxed text-slate-muted">{s.tip}</p>
               </div>
             </li>
           ))}
         </ul>
+
+        <p className="text-xs text-slate-muted">Same names → Play · Constellation Connect</p>
+
+        <Link
+          href="/play#constellation"
+          className="inline-flex w-full items-center justify-center rounded-full bg-lavender px-5 py-3 text-sm font-semibold text-navy transition hover:bg-lavender-soft sm:w-auto"
+        >
+          Play tonight&apos;s sky
+        </Link>
       </div>
     </div>
   );

@@ -15,6 +15,9 @@
   --electric-dim: #7dd3fc;
   --lavender: #d4c4fd;
   --lavender-soft: #b8a0f8;
+  /* Campus / recommended accent (mock gold) */
+  --gold: #f5c542;
+  --gold-dim: #fbbf24;
   /* Soft but visible edges */
   --border: rgba(148, 163, 184, 0.34);
   --glow: rgba(62, 207, 255, 0.2);
@@ -34,6 +37,8 @@
   --color-electric-dim: var(--electric-dim);
   --color-lavender: var(--lavender);
   --color-lavender-soft: var(--lavender-soft);
+  --color-gold: var(--gold);
+  --color-gold-dim: var(--gold-dim);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
