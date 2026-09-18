@@ -17,12 +17,25 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+function siteUrl(): URL {
+  const explicit = process.env.NEXT_PUBLIC_SITE_URL;
+  if (explicit) return new URL(explicit);
+
+  const vercelProd = process.env.VERCEL_PROJECT_PRODUCTION_URL;
+  if (vercelProd) {
+    const host = vercelProd.replace(/^https?:\/\//, "");
+    return new URL(`https://${host}`);
+  }
+
+  return new URL("https://www.quantumwoof.io");
+}
+
 export const viewport: Viewport = {
   themeColor: "#020617",
 };
 
 export const metadata: Metadata = {
-  metadataBase: new URL("http://localhost:3000"),
+  metadataBase: siteUrl(),
   applicationName: "Quantumwoof",
   title: site.title,
   description: site.description,
@@ -45,7 +58,23 @@ export const metadata: Metadata = {
   openGraph: {
     title: site.title,
     description: site.description,
-    images: ["/hosky-mark.png"],
+    url: "/",
+    siteName: "Quantumwoof",
+    type: "website",
+    images: [
+      {
+        url: "/og.png",
+        width: 1200,
+        height: 630,
+        alt: "Hosky · QuantumWoof",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: site.title,
+    description: site.description,
+    images: ["/og.png"],
   },
   other: {
     "mobile-web-app-capable": "yes",
