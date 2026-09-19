@@ -1,14 +1,20 @@
-# QuantumWoof - Hosky digital garden
+# Joshua Jubelo · Quantumwoof
 
-Personal dog-garden site for **Hosky** - bento cards, live-feeling widgets, notes.
+Indie builder in **Nigeria**. Two pillars: **Hosky** — an astronomy digital garden at [quantumwoof.io](https://www.quantumwoof.io) — and **Nigeria AI agents** for remittance and everyday money (see [naira-pulse](https://github.com/Quantumwoof/naira-pulse) and sibling repos).
+
+> **Hackathon lab vs garden:** this repo is the Hosky garden. Agent repos (`naira-pulse`, `edge-remit`, `naira-remit`, `voice-remit-ng`, …) are separate hackathon work — not part of this site.
+
+![Hosky · Quantumwoof garden homepage](docs/homepage.png)
+
+Personal dog-garden site for **Hosky** — bento cards, live-feeling widgets, notes.
 Includes **Woof School** (open campus micro-lessons). Built with **Next.js (App Router)**, **TypeScript**, and **Tailwind CSS**.
 
 ## Run locally
 
 ```bash
-cd /workspace/quantumwoof
-npm install
-npm run dev
+git clone https://github.com/Quantumwoof/quantumwoof.git && cd quantumwoof
+bun install
+bun run dev
 ```
 
 Then open http://localhost:3000
@@ -16,27 +22,27 @@ Then open http://localhost:3000
 Other scripts:
 
 ```bash
-npm run build
-npm run start
-npm run lint
+bun run build
+bun run start
+bun run lint
 ```
 
-Bun also works if you prefer (`bun install`, `bun run dev`).
+`npm` / `npx` also work if you prefer.
 
 ## Where to swap socials and contact
 
 Edit `src/content/site.ts`:
 
 - `socials.x`, `socials.github`, `socials.bluesky`, `socials.handle`
-- `contact.email` (placeholder: `hello@quantumwoof.io`)
-- `domainNote` when you point a real domain later
+- `contact.email` (`hello@quantumwoof.io`)
+- `domainNote` when DNS or branding changes
 
 Field notes live in `src/content/sky/notes.ts` (re-exported via `src/content/notes.ts` for routes).
 
 ## Brand mark
 
 - Source copy: `public/hosky-mark.png` (also `hosky-mark.jpeg`)
-- Original refs: `/workspace/quantumwoof-ref/`
+- Homepage screenshot: `docs/homepage.png`
 
 ## Key pages
 
@@ -48,7 +54,6 @@ Field notes live in `src/content/sky/notes.ts` (re-exported via `src/content/not
 | `/notes` | Notes index |
 | `/notes/[slug]` | Individual note |
 | `/play` | Woof games |
-
 
 ## Public API (JSON)
 
@@ -71,7 +76,6 @@ curl "https://www.quantumwoof.io/api/tonight-stars?country=NG"
 ```
 
 Local: `http://localhost:3000/api/...` after `bun run dev` or `bun run start`.
-
 
 ## Wooftags (Nebula Sniffer tip)
 
@@ -100,11 +104,9 @@ Vercel KV aliases `KV_REST_API_URL` + `KV_REST_API_TOKEN` also work.
 
 See `.env.example`.
 
-## Domain later
+## License
 
-1. Update socials/email in `src/content/site.ts`
-2. Deploy with standard Next.js hosting
-3. Attach your domain (e.g. `quantumwoof.io`) in DNS
+MIT — see [LICENSE](LICENSE).
 
 ## Aesthetic
 
