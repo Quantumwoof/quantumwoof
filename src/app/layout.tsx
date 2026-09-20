@@ -50,10 +50,11 @@ export const metadata: Metadata = {
     type: "website",
     images: [
       {
-        url: "/og-card.jpg",
+        url: "/og-x.jpg",
         width: 1200,
         height: 630,
         alt: "Hosky · QuantumWoof",
+        type: "image/jpeg",
       },
     ],
   },
@@ -61,7 +62,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: site.title,
     description: site.description,
-    images: ["/og-card.jpg"],
+    images: ["/og-x.jpg"],
   },
   other: {
     "mobile-web-app-capable": "yes",
