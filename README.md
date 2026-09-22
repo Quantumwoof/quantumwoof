@@ -2,7 +2,7 @@
 
 Indie builder in **Nigeria** — astronomy digital garden + AI agents for remittance and everyday money.
 
-**[quantumwoof.io](https://www.quantumwoof.io)** · **[GitHub](https://github.com/Quantumwoof)** · **[X](https://x.com/quantumwoofada)**
+**[quantumwoof.io](https://www.quantumwoof.io)** · **[GitHub](https://github.com/Quantumwoof)** · **[X](https://x.com/The_saved_soul)**
 
 ---
 
