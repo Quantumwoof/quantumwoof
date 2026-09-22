@@ -1,15 +1,33 @@
 # Joshua Jubelo · Quantumwoof
 
-Indie builder in **Nigeria**. Two pillars: **Hosky** — an astronomy digital garden at [quantumwoof.io](https://www.quantumwoof.io) — and **Nigeria AI agents** for remittance and everyday money (see [naira-pulse](https://github.com/Quantumwoof/naira-pulse) and sibling repos).
+Indie builder in **Nigeria** — astronomy digital garden + AI agents for remittance and everyday money.
 
-> **Hackathon lab vs garden:** this repo is the Hosky garden. Agent repos (`naira-pulse`, `edge-remit`, `naira-remit`, `voice-remit-ng`, …) are separate hackathon work — not part of this site.
+**[quantumwoof.io](https://www.quantumwoof.io)** · **[GitHub](https://github.com/Quantumwoof)** · **[X](https://x.com/quantumwoofada)**
 
-![Hosky · Quantumwoof garden homepage](docs/homepage.png)
+---
+
+## Featured projects
+
+| Project | One-liner |
+|--------|-----------|
+| **[quantumwoof](https://github.com/Quantumwoof/quantumwoof)** | Hosky astronomy digital garden — Next.js / TypeScript ([live](https://www.quantumwoof.io)) |
+| **[naira-pulse](https://github.com/Quantumwoof/naira-pulse)** | Everyday money AI agent for Nigeria (AWS Agents for Humans hackathon). Python, Streamlit, Strands. |
+| **[edge-remit](https://github.com/Quantumwoof/edge-remit)** | Edge AI remittance assistant with Intel OpenVINO intent routing (AI Infra Summit / lablab). |
+| **[voice-remit-ng](https://github.com/Quantumwoof/voice-remit-ng)** | Voice remittance agent for Nigeria (AssemblyAI Voice Agent Hackathon). |
+| **[naira-remit](https://github.com/Quantumwoof/naira-remit)** | Nigeria remittance timing agent (Nebius × NVIDIA Best Apps track). |
+
+> Agent repos are separate hackathon work — not part of the Hosky garden site.
+
+---
+
+## This repo: Hosky garden
 
 Personal dog-garden site for **Hosky** — bento cards, live-feeling widgets, notes.
 Includes **Woof School** (open campus micro-lessons). Built with **Next.js (App Router)**, **TypeScript**, and **Tailwind CSS**.
 
-## Run locally
+![Hosky · Quantumwoof garden homepage](docs/homepage.png)
+
+### Run locally
 
 ```bash
 git clone https://github.com/Quantumwoof/quantumwoof.git && cd quantumwoof
@@ -19,8 +37,6 @@ bun run dev
 
 Then open http://localhost:3000
 
-Other scripts:
-
 ```bash
 bun run build
 bun run start
@@ -29,7 +45,7 @@ bun run lint
 
 `npm` / `npx` also work if you prefer.
 
-## Where to swap socials and contact
+### Where to swap socials and contact
 
 Edit `src/content/site.ts`:
 
@@ -39,12 +55,12 @@ Edit `src/content/site.ts`:
 
 Field notes live in `src/content/sky/notes.ts` (re-exported via `src/content/notes.ts` for routes).
 
-## Brand mark
+### Brand mark
 
 - Source copy: `public/hosky-mark.png` (also `hosky-mark.jpeg`)
 - Homepage screenshot: `docs/homepage.png`
 
-## Key pages
+### Key pages
 
 | Path | What |
 |------|------|
@@ -55,7 +71,7 @@ Field notes live in `src/content/sky/notes.ts` (re-exported via `src/content/not
 | `/notes/[slug]` | Individual note |
 | `/play` | Woof games |
 
-## Public API (JSON)
+### Public API (JSON)
 
 Simple App Router GET routes — curated content, no database. CORS allows public GET.
 
@@ -77,7 +93,7 @@ curl "https://www.quantumwoof.io/api/tonight-stars?country=NG"
 
 Local: `http://localhost:3000/api/...` after `bun run dev` or `bun run start`.
 
-## Wooftags (Nebula Sniffer tip)
+### Wooftags (Nebula Sniffer tip)
 
 On **Certified Nebula Sniffer** unlock, Hosky *issues* a Wooftag (not a Cardano send).
 
@@ -88,7 +104,7 @@ On **Certified Nebula Sniffer** unlock, Hosky *issues* a Wooftag (not a Cardano 
 - Cap: **200 new tags per UTC day** (unused slots do not roll over). Overflow FIFO queue drains after 00:00 UTC first, then new mints fill remaining slots
 - One mint per browser: durable httpOnly cookie `qw_wooftag_browser` bound in the store — clearing localStorage alone cannot remint
 
-### Env (Vercel)
+#### Env (Vercel)
 
 Set in Project → Settings → Environment Variables (Production + Preview):
 
@@ -104,10 +120,10 @@ Vercel KV aliases `KV_REST_API_URL` + `KV_REST_API_TOKEN` also work.
 
 See `.env.example`.
 
-## License
+### License
 
 MIT — see [LICENSE](LICENSE).
 
-## Aesthetic
+### Aesthetic
 
 Navy + white + slate + electric blue / soft lavender; rounded bento cards; clean sans (Geist).
