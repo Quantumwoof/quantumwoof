@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { schoolTopics } from "@/content/woofSchool";
 import { useWoofProgress } from "@/hooks/useWoofProgress";
 import {
@@ -16,20 +16,18 @@ const TAG_KEY = "quantumwoof.wooftag.v1";
 const QUEUE_KEY = "quantumwoof.wooftag.queue.v1";
 const NAME_KEY = "quantumwoof.woof-school.sniffer-name";
 const DATE_KEY = "quantumwoof.woof-school.sniffer-date";
+const SKIP_KEY = "quantumwoof.wooftag.x-claim-skip.v1";
 
 type SavedTag = { tag: string; mintedAt: string };
 
 type MintRes = {
   ok: boolean;
-  status?: "minted" | "queued" | "already_issued";
+  status?: string;
   tag?: string;
   queueToken?: string;
   position?: number;
-  remaining?: number;
   message?: string;
   error?: string;
-  note?: string;
-  claim?: string;
   missingTopics?: string[];
 };
 
@@ -37,6 +35,23 @@ type StatusRes = {
   ok?: boolean;
   missingTopics?: string[];
   schoolComplete?: boolean;
+  xClaimEnabled?: boolean;
+  xSignedIn?: boolean;
+  xUsername?: string;
+  dayMissingTopics?: string[];
+  daySchoolComplete?: boolean;
+  nextClaimAt?: string;
+};
+
+type SessionRes = {
+  ok?: boolean;
+  enabled?: boolean;
+  signedIn?: boolean;
+  username?: string;
+  claimedToday?: boolean;
+  tag?: string;
+  issuedAt?: string;
+  history?: { utcDate: string; issuedAt: string; tag: string }[];
 };
 
 function readSaved(): SavedTag | null {
@@ -75,11 +90,31 @@ function topicTitle(slug: string): string {
   return schoolTopics.find((t) => t.slug === slug)?.title ?? slug;
 }
 
+function formatNextClaimLocal(iso?: string): string {
+  if (!iso) return "after 00:00 UTC";
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(new Date(iso));
+  } catch {
+    return iso;
+  }
+}
+
 export function WooftagMint() {
   const { ready, isSniffer, progress, startedAt } = useWoofProgress();
   const [saved, setSaved] = useState<SavedTag | null>(null);
   const [phase, setPhase] = useState<
-    "idle" | "waiting" | "stamping" | "queued" | "already" | "error" | "needs_checks"
+    | "idle"
+    | "waiting"
+    | "stamping"
+    | "queued"
+    | "already"
+    | "error"
+    | "needs_checks"
+    | "x_offer"
+    | "x_claiming"
   >("idle");
   const [queue, setQueue] = useState<{ token: string; position?: number } | null>(
     null,
@@ -88,6 +123,15 @@ export function WooftagMint() {
   const [missingTopics, setMissingTopics] = useState<string[]>([]);
   const [copied, setCopied] = useState(false);
   const [meta, setMeta] = useState({ name: "", dateLabel: "" });
+  const [xClaimEnabled, setXClaimEnabled] = useState(false);
+  const [xSignedIn, setXSignedIn] = useState(false);
+  const [xUsername, setXUsername] = useState("");
+  const [dayMissing, setDayMissing] = useState<string[]>([]);
+  const [nextClaimAt, setNextClaimAt] = useState<string | undefined>();
+  const [skipped, setSkipped] = useState(false);
+  const [history, setHistory] = useState<
+    { utcDate: string; issuedAt: string; tag: string }[]
+  >([]);
   const startedRef = useRef(false);
 
   useEffect(() => {
@@ -98,6 +142,7 @@ export function WooftagMint() {
     try {
       const q = window.localStorage.getItem(QUEUE_KEY);
       if (q) setQueue({ token: q });
+      setSkipped(window.localStorage.getItem(SKIP_KEY) === "1");
     } catch {
       /* ignore */
     }
@@ -113,6 +158,65 @@ export function WooftagMint() {
     }
   }, []);
 
+  const refreshXSession = useCallback(async () => {
+    try {
+      const res = await fetch("/api/auth/x/session");
+      const json = (await res.json()) as SessionRes;
+      if (!json.enabled) return;
+      setXSignedIn(Boolean(json.signedIn));
+      setXUsername(json.username ?? "");
+      setHistory(Array.isArray(json.history) ? json.history : []);
+      if (json.claimedToday && json.tag && isWooftagFormat(json.tag)) {
+        const rec = {
+          tag: json.tag,
+          mintedAt: json.issuedAt || new Date().toISOString(),
+        };
+        writeSaved(rec);
+        setSaved(rec);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!ready) return;
+    try {
+      const u = new URL(window.location.href);
+      const auth = u.searchParams.get("x_auth");
+      if (!auth) return;
+      if (auth === "ok") {
+        setSkipped(false);
+        setPhase("x_offer");
+        void refreshXSession();
+      } else if (auth === "ineligible") {
+        const reason = u.searchParams.get("reason") ?? "";
+        setError(
+          reason === "too_new"
+            ? "This X account is too new for a Wooftag tip."
+            : reason === "inactive"
+              ? "This X account looks too quiet for a tip just yet."
+              : "This X account isn’t eligible for a Wooftag tip right now.",
+        );
+        setPhase("x_offer");
+      } else if (auth === "state") {
+        setError("Sign-in didn’t line up — please try Claim with X again.");
+        setPhase("x_offer");
+      } else if (auth !== "disabled") {
+        setError("Sign-in didn’t finish — you can try again or keep learning.");
+        setPhase("x_offer");
+      }
+      u.searchParams.delete("x_auth");
+      u.searchParams.delete("reason");
+      u.searchParams.delete("u");
+      window.history.replaceState({}, "", u.pathname + u.search + u.hash);
+    } catch {
+      /* ignore */
+    }
+  }, [ready, refreshXSession]);
+
+
+
   useEffect(() => {
     if (!ready || !isSniffer || startedRef.current) return;
     startedRef.current = true;
@@ -120,7 +224,15 @@ export function WooftagMint() {
     const existing = readSaved();
     if (existing) {
       setSaved(existing);
-      void fetch("/api/wooftag/status").catch(() => undefined);
+      void fetch("/api/wooftag/status")
+        .then((r) => r.json())
+        .then((s: StatusRes) => {
+          setXClaimEnabled(Boolean(s.xClaimEnabled));
+          setNextClaimAt(s.nextClaimAt);
+          setDayMissing(Array.isArray(s.dayMissingTopics) ? s.dayMissingTopics : []);
+          if (s.xClaimEnabled) void refreshXSession();
+        })
+        .catch(() => undefined);
       return;
     }
 
@@ -132,6 +244,31 @@ export function WooftagMint() {
         const statusRes = await fetch("/api/wooftag/status");
         const statusJson = (await statusRes.json()) as StatusRes;
         if (cancelled) return;
+
+        const xOn = Boolean(statusJson.xClaimEnabled);
+        setXClaimEnabled(xOn);
+        setNextClaimAt(statusJson.nextClaimAt);
+        setDayMissing(
+          Array.isArray(statusJson.dayMissingTopics)
+            ? statusJson.dayMissingTopics
+            : [],
+        );
+
+        if (xOn) {
+          await refreshXSession();
+          if (cancelled) return;
+          try {
+            if (window.localStorage.getItem(SKIP_KEY) === "1") {
+              setSkipped(true);
+              setPhase("idle");
+              return;
+            }
+          } catch {
+            /* ignore */
+          }
+          setPhase("x_offer");
+          return;
+        }
 
         const missing = Array.isArray(statusJson.missingTopics)
           ? statusJson.missingTopics
@@ -147,7 +284,8 @@ export function WooftagMint() {
 
         const postMint = async () => {
           const queueToken =
-            (typeof window !== "undefined" && window.localStorage.getItem(QUEUE_KEY)) ||
+            (typeof window !== "undefined" &&
+              window.localStorage.getItem(QUEUE_KEY)) ||
             undefined;
           const mintRes = await fetch("/api/wooftag/mint", {
             method: "POST",
@@ -172,6 +310,11 @@ export function WooftagMint() {
           setPhase("stamping");
           minted = await postMint();
           if (cancelled) return;
+        }
+
+        if (minted.error === "sign_in_required") {
+          setPhase("x_offer");
+          return;
         }
 
         if (minted.error === "school_incomplete") {
@@ -228,11 +371,68 @@ export function WooftagMint() {
     return () => {
       cancelled = true;
     };
-  }, [ready, isSniffer, progress.woofed, startedAt]);
+  }, [ready, isSniffer, progress.woofed, startedAt, refreshXSession]);
+
+  const claimWithX = useCallback(async () => {
+    setError("");
+    setPhase("x_claiming");
+    try {
+      const res = await fetch("/api/wooftag/claim", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const json = (await res.json()) as MintRes;
+      if (
+        (json.status === "claimed" || json.status === "already_claimed") &&
+        json.tag &&
+        isWooftagFormat(json.tag)
+      ) {
+        const rec = { tag: json.tag, mintedAt: new Date().toISOString() };
+        writeSaved(rec);
+        setSaved(rec);
+        setPhase("idle");
+        await refreshXSession();
+        return;
+      }
+      if (json.error === "school_incomplete") {
+        setDayMissing(Array.isArray(json.missingTopics) ? json.missingTopics : []);
+        setPhase("x_offer");
+        setError(json.message || "Pass today’s woof checks first.");
+        return;
+      }
+      if (json.error === "sign_in_required") {
+        window.location.href = "/api/auth/x/start";
+        return;
+      }
+      if (json.status === "queued") {
+        setPhase("queued");
+        return;
+      }
+      setError(json.message || "Could not claim today’s Wooftag.");
+      setPhase("x_offer");
+    } catch {
+      setError("Could not reach the tip bowl.");
+      setPhase("x_offer");
+    }
+  }, [refreshXSession]);
+
+  const skipClaim = useCallback(() => {
+    try {
+      window.localStorage.setItem(SKIP_KEY, "1");
+    } catch {
+      /* ignore */
+    }
+    setSkipped(true);
+    setPhase("idle");
+  }, []);
+
+  const nextClaimLocal = useMemo(
+    () => formatNextClaimLocal(nextClaimAt),
+    [nextClaimAt],
+  );
 
   if (!ready || !isSniffer) return null;
-
-  // Status / mint APIs may still return minted/remaining/cap for ops — never show those to visitors.
 
   if (saved) {
     const snifferName = meta.name.trim() || "sniffer";
@@ -256,7 +456,26 @@ export function WooftagMint() {
           <p className="mt-3 inline-flex rounded-full border border-lavender/30 bg-lavender/10 px-2.5 py-0.5 text-xs text-lavender">
             Issued · {WOOFTAG_CLAIM_LATER.toLowerCase()}
           </p>
+          {xClaimEnabled ? (
+            <p className="mt-3 text-xs leading-relaxed text-slate">
+              You can sign in daily to claim a Wooftag — pass today&apos;s Woof School
+              quizzes, then claim. Next claim opens {nextClaimLocal}.
+            </p>
+          ) : null}
         </div>
+
+        {xClaimEnabled && history.length > 1 ? (
+          <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 sm:p-5">
+            <p className="card-label mb-2 text-slate-muted">Past daily claims</p>
+            <ul className="space-y-1.5 font-mono text-xs text-slate">
+              {history.slice(0, 8).map((h) => (
+                <li key={h.utcDate} className="break-all">
+                  {h.utcDate} · {h.tag}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
 
         <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 sm:p-5">
           <p className="card-label mb-3 text-slate-muted">What&apos;s next</p>
@@ -300,6 +519,133 @@ export function WooftagMint() {
             Back to campus
           </Link>
         </div>
+      </div>
+    );
+  }
+
+  if (xClaimEnabled && (phase === "x_offer" || phase === "x_claiming" || skipped)) {
+    return (
+      <div className="mt-6 space-y-3">
+        <div className="rounded-2xl border border-lavender/35 bg-lavender/[0.07] p-4 sm:p-5">
+          <p className="card-label mb-1 text-lavender">Nebula Sniffer</p>
+          <h3 className="text-lg font-semibold text-white sm:text-xl">
+            Cert unlocked — learning stays open
+          </h3>
+          <p className="mt-1 text-sm text-slate">
+            No sign-in needed for Woof School or your certificate.
+          </p>
+        </div>
+
+        {!skipped ? (
+          <div className="rounded-2xl border border-electric/30 bg-electric/[0.07] p-4 sm:p-5">
+            <p className="card-label mb-1">Optional · Claim with X</p>
+            <h3 className="text-lg font-semibold text-white">
+              Claim your Wooftag with X
+            </h3>
+            <p className="mt-2 text-sm leading-relaxed text-slate">
+              You can sign in daily to claim a Wooftag — pass today&apos;s Woof School
+              quizzes, then claim. Next claim opens {nextClaimLocal}.
+            </p>
+            <p className="mt-2 text-xs text-slate-muted">
+              We only read your public profile (no posting).{" "}
+              <Link
+                href="/privacy"
+                className="text-electric underline-offset-2 hover:underline"
+              >
+                Privacy
+              </Link>
+            </p>
+
+            {dayMissing.length > 0 ? (
+              <div className="mt-4 space-y-2">
+                <p className="text-sm text-lavender">
+                  Pass today&apos;s woof checks before claiming:
+                </p>
+                <ul className="flex flex-col gap-2">
+                  {dayMissing.map((slug) => (
+                    <li key={slug}>
+                      <Link
+                        href={`/school/${slug}`}
+                        className="inline-flex rounded-full border border-electric/35 bg-electric/10 px-3 py-1.5 text-sm text-electric transition hover:border-electric/60"
+                      >
+                        Today&apos;s check · {topicTitle(slug)} →
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+
+            {error ? <p className="mt-3 text-sm text-lavender">{error}</p> : null}
+
+            <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+              {xSignedIn ? (
+                <button
+                  type="button"
+                  disabled={phase === "x_claiming" || dayMissing.length > 0}
+                  onClick={() => void claimWithX()}
+                  className="inline-flex flex-1 items-center justify-center rounded-full bg-lavender px-4 py-2.5 text-sm font-semibold text-navy transition hover:bg-lavender-soft disabled:opacity-50"
+                >
+                  {phase === "x_claiming"
+                    ? "Claiming…"
+                    : xUsername
+                      ? `Claim today’s tip (@${xUsername})`
+                      : "Claim today’s tip"}
+                </button>
+              ) : (
+                <a
+                  href="/api/auth/x/start"
+                  className="inline-flex flex-1 items-center justify-center rounded-full bg-lavender px-4 py-2.5 text-sm font-semibold text-navy transition hover:bg-lavender-soft"
+                >
+                  Sign in with X to claim
+                </a>
+              )}
+              <button
+                type="button"
+                onClick={skipClaim}
+                className="inline-flex flex-1 items-center justify-center rounded-full border border-white/15 bg-white/[0.04] px-4 py-2.5 text-sm font-semibold text-white transition hover:border-electric/35"
+              >
+                Maybe later / just learning
+              </button>
+            </div>
+            {xSignedIn ? (
+              <button
+                type="button"
+                className="mt-2 text-xs text-slate-muted underline-offset-2 hover:underline"
+                onClick={() => {
+                  void fetch("/api/auth/x/signout", { method: "POST" }).then(() => {
+                    setXSignedIn(false);
+                    setXUsername("");
+                  });
+                }}
+              >
+                Sign out of X
+              </button>
+            ) : null}
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 sm:p-5">
+            <p className="text-sm text-slate">
+              Tip claim skipped — keep sniffing whenever you like. You can claim later
+              from this page.
+            </p>
+            <button
+              type="button"
+              className="mt-3 text-sm text-electric underline-offset-2 hover:underline"
+              onClick={() => {
+                try {
+                  window.localStorage.removeItem(SKIP_KEY);
+                } catch {
+                  /* ignore */
+                }
+                setSkipped(false);
+                setPhase("x_offer");
+              }}
+            >
+              Show claim option
+            </button>
+          </div>
+        )}
       </div>
     );
   }
@@ -352,6 +698,7 @@ export function WooftagMint() {
       {phase === "error" ? (
         <p className="mt-4 text-sm text-lavender">{error}</p>
       ) : null}
+      {queue ? null : null}
     </div>
   );
 }

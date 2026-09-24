@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { getTopic } from "@/content/woofSchool";
 import { gradeWoofCheck } from "@/content/woofSchool-answers";
+import { utcDateKey } from "@/lib/wooftag";
 import { getWooftagStore } from "@/lib/wooftag-store";
 import { clientIp, ensureBrowserId, json } from "@/lib/wooftag-http";
 
@@ -83,10 +84,15 @@ export async function POST(req: NextRequest) {
   const passed = graded.score >= passAt;
 
   if (passed) {
+    // Undated stamps keep anonymous mint working while X claim is off.
     await store.addSchoolStamp(browser.id, topic.slug);
+    // Day-scoped stamps gate X daily claims (undated keys are ignored for claims).
+    await store.addDaySchoolStamp(browser.id, utcDateKey(), topic.slug);
   }
 
+  const today = utcDateKey();
   const stamps = await store.getSchoolStamps(browser.id);
+  const dayStamps = await store.getDaySchoolStamps(browser.id, today);
 
   return json(
     {
@@ -98,6 +104,8 @@ export async function POST(req: NextRequest) {
       total: graded.total,
       results: graded.results,
       stamps,
+      dayStamps,
+      utcDate: today,
     },
     { cookies: pendingCookies },
   );

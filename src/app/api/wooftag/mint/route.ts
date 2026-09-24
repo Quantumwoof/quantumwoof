@@ -12,6 +12,10 @@ import {
 import { getWooftagPepper, hashWooftag } from "@/lib/wooftag-hash";
 import { getWooftagStore, type QueueItem } from "@/lib/wooftag-store";
 import {
+  WOOFTAG_X_MESSAGES,
+  isWooftagXClaimEnabled,
+} from "@/lib/wooftag-x";
+import {
   ALREADY_SNIFFED_COPY,
   alreadyIssued,
   clientIp,
@@ -39,6 +43,18 @@ type MintBody = {
 };
 
 export async function POST(req: NextRequest) {
+  // When X daily claim is on, anonymous mint is off.
+  if (isWooftagXClaimEnabled()) {
+    return json(
+      {
+        ok: false,
+        error: "sign_in_required",
+        message: WOOFTAG_X_MESSAGES.signInRequired,
+      },
+      { status: 403 },
+    );
+  }
+
   const store = getWooftagStore();
   if (!store) {
     console.error("[wooftag/mint] durable store unavailable");

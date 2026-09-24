@@ -6,6 +6,8 @@ import {
   utcDateKey,
 } from "@/lib/wooftag";
 import { getWooftagStore } from "@/lib/wooftag-store";
+import { isWooftagXClaimEnabled } from "@/lib/wooftag-x";
+import { readSession } from "@/lib/auth-session";
 import { clientIp, ensureGateCookies, json, readBrowserId } from "@/lib/wooftag-http";
 
 export const runtime = "nodejs";
@@ -32,6 +34,7 @@ export async function GET(req: NextRequest) {
         remaining: 0,
         queueLength: 0,
         claim: WOOFTAG_CLAIM_LATER,
+        xClaimEnabled: false,
       },
       { status: 503, cookies },
     );
@@ -47,6 +50,7 @@ export async function GET(req: NextRequest) {
         remaining: 0,
         cap: WOOFTAG_DAILY_CAP,
         claim: WOOFTAG_CLAIM_LATER,
+        xClaimEnabled: isWooftagXClaimEnabled(),
       },
       { status: 429, cookies },
     );
@@ -57,6 +61,26 @@ export async function GET(req: NextRequest) {
   const stamps = browserId ? await store.getSchoolStamps(browserId) : [];
   const stamped = new Set(stamps);
   const missingTopics = READY_TOPIC_SLUGS.filter((s) => !stamped.has(s));
+
+  const xClaimEnabled = isWooftagXClaimEnabled();
+  const session = xClaimEnabled ? readSession(req) : null;
+  const dayStamps = browserId
+    ? await store.getDaySchoolStamps(browserId, day.utcDate)
+    : [];
+  const dayStamped = new Set(dayStamps);
+  const dayMissingTopics = READY_TOPIC_SLUGS.filter((s) => !dayStamped.has(s));
+  // Next UTC midnight — clients format in local time.
+  const nextClaimAt = new Date(
+    Date.UTC(
+      Number(day.utcDate.slice(0, 4)),
+      Number(day.utcDate.slice(5, 7)) - 1,
+      Number(day.utcDate.slice(8, 10)) + 1,
+      0,
+      0,
+      0,
+    ),
+  ).toISOString();
+
   return json(
     {
       ok: true,
@@ -69,6 +93,13 @@ export async function GET(req: NextRequest) {
       stamps,
       missingTopics,
       schoolComplete: missingTopics.length === 0,
+      xClaimEnabled,
+      xSignedIn: Boolean(session),
+      xUsername: session?.un,
+      dayStamps,
+      dayMissingTopics,
+      daySchoolComplete: dayMissingTopics.length === 0,
+      nextClaimAt,
     },
     { cookies },
   );

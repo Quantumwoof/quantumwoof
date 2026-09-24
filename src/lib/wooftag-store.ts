@@ -27,6 +27,28 @@ import { utcDateKey, WOOFTAG_DAILY_CAP } from "@/lib/wooftag";
 
 export type QueueItem = { id: string; t: number };
 
+/** Daily Wooftag claim for an X account — plaintext tag stored encrypted at rest. */
+export type XClaimRecord = {
+  xUserId: string;
+  username: string;
+  /** X account created_at ISO string. */
+  createdAt: string;
+  /** UTC date key YYYY-MM-DD this claim was issued for. */
+  utcDate: string;
+  issuedAt: string;
+  tagHash: string;
+  /** AES-GCM ciphertext from encryptWooftag. */
+  tagEnc: string;
+};
+
+/** Compact history entry for re-showing past daily claims after sign-in. */
+export type XClaimHistoryItem = {
+  utcDate: string;
+  issuedAt: string;
+  tagHash: string;
+  tagEnc: string;
+};
+
 export type DayCounts = {
   utcDate: string;
   minted: number;
@@ -40,7 +62,12 @@ export type StoreKind = "upstash" | "memory" | "none";
 const DAY_TTL_SEC = 60 * 60 * 24 * 4;
 const HASH_TTL_SEC = 60 * 60 * 24 * 400;
 const BROWSER_TTL_SEC = 60 * 60 * 24 * 400;
-const STAMP_TTL_SEC = 60 * 60 * 24 * 400;
+const STAMP_TTL_SEC = 60 * 60 * 24 * 400; // undated stamps (anonymous mint while flag off)
+/** Day-scoped stamps for X daily claims — ~48h so yesterday can linger briefly. */
+const DAY_STAMP_TTL_SEC = 60 * 60 * 48;
+const X_CLAIM_TTL_SEC = 60 * 60 * 24 * 400;
+const X_HISTORY_TTL_SEC = 60 * 60 * 24 * 400;
+const X_HISTORY_MAX = 60;
 const QUEUE_KEY = "wooftag:queue";
 
 function redisEnv(): { url: string; token: string } | null {
@@ -108,10 +135,25 @@ export type WooftagStore = {
   bindBrowser(browserId: string, mintedAt: string): Promise<boolean>;
   getQueue(): Promise<QueueItem[]>;
   setQueue(items: QueueItem[]): Promise<void>;
-  /** Record a passed woof-check stamp for this browser (Redis set). */
+  /** Record a passed woof-check stamp for this browser (undated Redis set — anonymous mint). */
   addSchoolStamp(browserId: string, topicSlug: string): Promise<void>;
-  /** Topic slugs this browser has server-verified stamps for. */
+  /** Undated topic slugs (anonymous mint while X claim flag is off). */
   getSchoolStamps(browserId: string): Promise<string[]>;
+  /**
+   * Day-scoped stamp for X daily claims: wooftag:stamps:<browserId>:<utcDate>.
+   * Undated keys are left intact and ignored for claims.
+   */
+  addDaySchoolStamp(browserId: string, utcDate: string, topicSlug: string): Promise<void>;
+  /** Topic slugs stamped for this browser on the given UTC date. */
+  getDaySchoolStamps(browserId: string, utcDate: string): Promise<string[]>;
+  /** Existing claim for this X user on this UTC date, or null. */
+  getXClaim(xUserId: string, utcDate: string): Promise<XClaimRecord | null>;
+  /** Bind Wooftag to X user + UTC date (SET NX). Returns false if already claimed that day. */
+  putXClaim(record: XClaimRecord): Promise<boolean>;
+  /** Append to per-account history (newest first, capped). */
+  pushXClaimHistory(xUserId: string, item: XClaimHistoryItem): Promise<void>;
+  /** Past claims for this X account (newest first). */
+  listXClaimHistory(xUserId: string): Promise<XClaimHistoryItem[]>;
 };
 
 class RedisStore implements WooftagStore {
@@ -190,6 +232,69 @@ class RedisStore implements WooftagStore {
     return members.filter((m): m is string => typeof m === "string" && m.length > 0);
   }
 
+  async addDaySchoolStamp(browserId: string, utcDate: string, topicSlug: string) {
+    const k = `wooftag:stamps:${browserId}:${utcDate}`;
+    await this.redis.sadd(k, topicSlug);
+    await this.redis.expire(k, DAY_STAMP_TTL_SEC);
+  }
+
+  async getDaySchoolStamps(browserId: string, utcDate: string): Promise<string[]> {
+    const members = await this.redis.smembers(`wooftag:stamps:${browserId}:${utcDate}`);
+    if (!Array.isArray(members)) return [];
+    return members.filter((m): m is string => typeof m === "string" && m.length > 0);
+  }
+
+  async getXClaim(xUserId: string, utcDate: string): Promise<XClaimRecord | null> {
+    const raw = await this.redis.get<XClaimRecord | string>(`wooftag:x:${xUserId}:${utcDate}`);
+    if (!raw) return null;
+    if (typeof raw === "string") {
+      try {
+        return normalizeXClaim(JSON.parse(raw));
+      } catch {
+        return null;
+      }
+    }
+    return normalizeXClaim(raw);
+  }
+
+  async putXClaim(record: XClaimRecord): Promise<boolean> {
+    const k = `wooftag:x:${record.xUserId}:${record.utcDate}`;
+    const ok = await this.redis.set(k, record, { nx: true, ex: X_CLAIM_TTL_SEC });
+    return Boolean(ok);
+  }
+
+  async pushXClaimHistory(xUserId: string, item: XClaimHistoryItem) {
+    const k = `wooftag:x:history:${xUserId}`;
+    const raw = await this.redis.get<XClaimHistoryItem[] | string>(k);
+    let list: XClaimHistoryItem[] = [];
+    if (Array.isArray(raw)) list = raw;
+    else if (typeof raw === "string") {
+      try {
+        const parsed = JSON.parse(raw) as XClaimHistoryItem[];
+        if (Array.isArray(parsed)) list = parsed;
+      } catch {
+        list = [];
+      }
+    }
+    const next = [item, ...list.filter((h) => h.utcDate !== item.utcDate)].slice(0, X_HISTORY_MAX);
+    await this.redis.set(k, next, { ex: X_HISTORY_TTL_SEC });
+  }
+
+  async listXClaimHistory(xUserId: string): Promise<XClaimHistoryItem[]> {
+    const raw = await this.redis.get<XClaimHistoryItem[] | string>(`wooftag:x:history:${xUserId}`);
+    if (!raw) return [];
+    if (Array.isArray(raw)) return raw.filter(isHistoryItem);
+    if (typeof raw === "string") {
+      try {
+        const parsed = JSON.parse(raw) as XClaimHistoryItem[];
+        return Array.isArray(parsed) ? parsed.filter(isHistoryItem) : [];
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  }
+
   async getQueue(): Promise<QueueItem[]> {
     const raw = await this.redis.get<QueueItem[] | string>(QUEUE_KEY);
     if (!raw) return [];
@@ -219,6 +324,9 @@ class MemoryStore implements WooftagStore {
   private hashes = new Map<string, string>();
   private browsers = new Map<string, string>();
   private stamps = new Map<string, Set<string>>();
+  private dayStamps = new Map<string, Set<string>>();
+  private xClaims = new Map<string, XClaimRecord>();
+  private xHistory = new Map<string, XClaimHistoryItem[]>();
   private rl = new Map<string, { n: number; reset: number }>();
   private queue: QueueItem[] = [];
 
@@ -288,6 +396,41 @@ class MemoryStore implements WooftagStore {
     return [...(this.stamps.get(browserId) ?? [])];
   }
 
+  async addDaySchoolStamp(browserId: string, utcDate: string, topicSlug: string) {
+    const key = `${browserId}:${utcDate}`;
+    let set = this.dayStamps.get(key);
+    if (!set) {
+      set = new Set();
+      this.dayStamps.set(key, set);
+    }
+    set.add(topicSlug);
+  }
+
+  async getDaySchoolStamps(browserId: string, utcDate: string) {
+    return [...(this.dayStamps.get(`${browserId}:${utcDate}`) ?? [])];
+  }
+
+  async getXClaim(xUserId: string, utcDate: string) {
+    return this.xClaims.get(`${xUserId}:${utcDate}`) ?? null;
+  }
+
+  async putXClaim(record: XClaimRecord) {
+    const key = `${record.xUserId}:${record.utcDate}`;
+    if (this.xClaims.has(key)) return false;
+    this.xClaims.set(key, { ...record });
+    return true;
+  }
+
+  async pushXClaimHistory(xUserId: string, item: XClaimHistoryItem) {
+    const prev = this.xHistory.get(xUserId) ?? [];
+    const next = [item, ...prev.filter((h) => h.utcDate !== item.utcDate)].slice(0, X_HISTORY_MAX);
+    this.xHistory.set(xUserId, next);
+  }
+
+  async listXClaimHistory(xUserId: string) {
+    return [...(this.xHistory.get(xUserId) ?? [])];
+  }
+
   async getQueue() {
     return [...this.queue];
   }
@@ -295,6 +438,42 @@ class MemoryStore implements WooftagStore {
   async setQueue(items: QueueItem[]) {
     this.queue = [...items];
   }
+}
+
+function normalizeXClaim(raw: unknown): XClaimRecord | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  if (
+    typeof o.xUserId !== "string" ||
+    typeof o.username !== "string" ||
+    typeof o.createdAt !== "string" ||
+    typeof o.utcDate !== "string" ||
+    typeof o.issuedAt !== "string" ||
+    typeof o.tagHash !== "string" ||
+    typeof o.tagEnc !== "string"
+  ) {
+    return null;
+  }
+  return {
+    xUserId: o.xUserId,
+    username: o.username,
+    createdAt: o.createdAt,
+    utcDate: o.utcDate,
+    issuedAt: o.issuedAt,
+    tagHash: o.tagHash,
+    tagEnc: o.tagEnc,
+  };
+}
+
+function isHistoryItem(h: unknown): h is XClaimHistoryItem {
+  if (!h || typeof h !== "object") return false;
+  const o = h as Record<string, unknown>;
+  return (
+    typeof o.utcDate === "string" &&
+    typeof o.issuedAt === "string" &&
+    typeof o.tagHash === "string" &&
+    typeof o.tagEnc === "string"
+  );
 }
 
 export function getWooftagStore(): WooftagStore | null {
@@ -312,3 +491,11 @@ export function getWooftagStore(): WooftagStore | null {
   }
   return null;
 }
+
+/** Dev/test only — wipe the in-memory store between cases. */
+export function resetMemoryStoreForTests(): void {
+  if (process.env.NODE_ENV === "production") return;
+  memorySingleton = new MemoryStore();
+  redisSingleton = undefined;
+}
+
