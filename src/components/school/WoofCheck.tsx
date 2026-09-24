@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import type { SchoolTopic } from "@/content/woofSchool";
 import { useGuidedPath } from "@/hooks/useGuidedPath";
 import { useWoofProgress } from "@/hooks/useWoofProgress";
@@ -20,6 +20,20 @@ type Props = {
   nextCourtyard?: NextCourtyard | null;
 };
 
+type CheckRes = {
+  ok: boolean;
+  passed?: boolean;
+  score?: number;
+  passAt?: number;
+  total?: number;
+  results?: Record<
+    string,
+    { pick: "a" | "b" | "c" | null; correct: boolean; answer: "a" | "b" | "c" }
+  >;
+  error?: string;
+  message?: string;
+};
+
 export function WoofCheck({ topic, embedded = false, nextCourtyard = null }: Props) {
   const check = topic.woofCheck;
   const { ready, isWoofed, markWoofed } = useWoofProgress();
@@ -28,35 +42,53 @@ export function WoofCheck({ topic, embedded = false, nextCourtyard = null }: Pro
 
   const [picks, setPicks] = useState<Record<string, "a" | "b" | "c">>({});
   const [submitted, setSubmitted] = useState(false);
-
-  const score = useMemo(() => {
-    if (!check) return 0;
-    return check.questions.reduce(
-      (n, q) => n + (picks[q.id] === q.answer ? 1 : 0),
-      0,
-    );
-  }, [check, picks]);
+  const [checking, setChecking] = useState(false);
+  const [score, setScore] = useState(0);
+  const [passAtState, setPassAtState] = useState(check?.passAt ?? 0);
+  const [results, setResults] = useState<CheckRes["results"]>();
+  const [error, setError] = useState("");
 
   if (!check) return null;
 
-  const passAt = check.passAt;
+  const passAt = passAtState || check.passAt;
   const allAnswered = check.questions.every((q) => picks[q.id]);
   const passed = (submitted && score >= passAt) || already;
   const label = topic.courtyardLabel ?? "courtyard";
 
-  function onCheck() {
-    if (!allAnswered) return;
-    const finalScore = check!.questions.reduce(
-      (n, q) => n + (picks[q.id] === q.answer ? 1 : 0),
-      0,
-    );
-    setSubmitted(true);
-    if (finalScore >= passAt) markWoofed(topic.slug);
+  async function onCheck() {
+    if (!allAnswered || checking) return;
+    setChecking(true);
+    setError("");
+    try {
+      const res = await fetch("/api/woof-school/check", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ topic: topic.slug, answers: picks }),
+      });
+      const data = (await res.json()) as CheckRes;
+      if (!data.ok) {
+        setError(data.message || "Could not check your woof.");
+        setChecking(false);
+        return;
+      }
+      setScore(data.score ?? 0);
+      setPassAtState(data.passAt ?? check!.passAt);
+      setResults(data.results);
+      setSubmitted(true);
+      if (data.passed) markWoofed(topic.slug);
+    } catch {
+      setError("Could not reach the woof check pad.");
+    } finally {
+      setChecking(false);
+    }
   }
 
   function onRetry() {
     setPicks({});
     setSubmitted(false);
+    setResults(undefined);
+    setScore(0);
+    setError("");
   }
 
   return (
@@ -82,8 +114,10 @@ export function WoofCheck({ topic, embedded = false, nextCourtyard = null }: Pro
       <ol className="mt-5 space-y-5">
         {check.questions.map((q, i) => {
           const pick = picks[q.id];
-          const show = submitted && Boolean(pick);
-          const correct = pick === q.answer;
+          const result = results?.[q.id];
+          const show = submitted && Boolean(result);
+          const correct = Boolean(result?.correct);
+          const rightId = result?.answer;
           return (
             <li key={q.id}>
               <p className="text-sm font-medium text-white">
@@ -94,14 +128,14 @@ export function WoofCheck({ topic, embedded = false, nextCourtyard = null }: Pro
                   const selected = pick === c.id;
                   let ring = "border-white/15 hover:border-electric/40";
                   if (selected && !submitted) ring = "border-electric bg-electric/15";
-                  if (show && c.id === q.answer) ring = "border-electric bg-electric/20";
+                  if (show && rightId && c.id === rightId) ring = "border-electric bg-electric/20";
                   if (show && selected && !correct) ring = "border-rose-400/50 bg-rose-400/10";
                   return (
                     <button
                       key={c.id}
                       type="button"
                       onClick={() => {
-                        if (submitted) return;
+                        if (submitted || checking) return;
                         setPicks((p) => ({ ...p, [q.id]: c.id }));
                       }}
                       className={`rounded-xl border px-3 py-2 text-left text-sm text-slate transition ${ring}`}
@@ -121,11 +155,11 @@ export function WoofCheck({ topic, embedded = false, nextCourtyard = null }: Pro
         {!submitted ? (
           <button
             type="button"
-            disabled={!allAnswered}
-            onClick={onCheck}
+            disabled={!allAnswered || checking}
+            onClick={() => void onCheck()}
             className="rounded-full bg-electric px-4 py-2 text-sm font-semibold text-navy transition hover:bg-electric-dim disabled:cursor-not-allowed disabled:opacity-40"
           >
-            Check my woof
+            {checking ? "Checking…" : "Check my woof"}
           </button>
         ) : (
           <>
@@ -151,6 +185,8 @@ export function WoofCheck({ topic, embedded = false, nextCourtyard = null }: Pro
           </>
         )}
       </div>
+
+      {error ? <p className="mt-3 text-sm text-lavender">{error}</p> : null}
 
       {passed && nextCourtyard ? (
         <div className="mt-5 rounded-xl border border-electric/30 bg-electric/[0.08] p-4">

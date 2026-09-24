@@ -114,16 +114,18 @@ export async function POST(req: NextRequest) {
     body = {};
   }
 
-  const woofed = Array.isArray(body.woofed)
-    ? [...new Set(body.woofed.filter((s): s is string => typeof s === "string"))]
-    : [];
-  const validCount = woofed.filter((s) => READY_SLUGS.has(s)).length;
-  if (validCount < SNIFFER_THRESHOLD) {
+  // Authorization is server stamps only — ignore client-reported `woofed` lists.
+  const stamps = await store.getSchoolStamps(browser.id);
+  const stamped = new Set(stamps);
+  const missingTopics = [...READY_SLUGS].filter((s) => !stamped.has(s));
+  if (missingTopics.length > 0 || stamped.size < SNIFFER_THRESHOLD) {
     return json(
       {
         ok: false,
-        error: "not_sniffer",
-        message: "Woof a few more courtyards first — the tip bowl is for Certified Nebula Sniffers.",
+        error: "school_incomplete",
+        missingTopics,
+        message:
+          "Finish the woof checks in each courtyard first — then Hosky can stamp a Wooftag.",
       },
       { status: 400, cookies: pendingCookies },
     );

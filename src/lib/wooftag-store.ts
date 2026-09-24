@@ -16,6 +16,9 @@
  * Browser lock: `wooftag:browser:<id>` binds the durable `qw_wooftag_browser`
  * cookie id after a successful mint (one sniff per browser).
  *
+ * School stamps: `wooftag:stamps:<browserId>` (Redis set of topic slugs) records
+ * server-verified woof-check passes; mint requires stamps for all ready topics.
+ *
  * TODO: do not add a filesystem JSON fallback — serverless disks are not durable.
  */
 
@@ -37,6 +40,7 @@ export type StoreKind = "upstash" | "memory" | "none";
 const DAY_TTL_SEC = 60 * 60 * 24 * 4;
 const HASH_TTL_SEC = 60 * 60 * 24 * 400;
 const BROWSER_TTL_SEC = 60 * 60 * 24 * 400;
+const STAMP_TTL_SEC = 60 * 60 * 24 * 400;
 const QUEUE_KEY = "wooftag:queue";
 
 function redisEnv(): { url: string; token: string } | null {
@@ -104,6 +108,10 @@ export type WooftagStore = {
   bindBrowser(browserId: string, mintedAt: string): Promise<boolean>;
   getQueue(): Promise<QueueItem[]>;
   setQueue(items: QueueItem[]): Promise<void>;
+  /** Record a passed woof-check stamp for this browser (Redis set). */
+  addSchoolStamp(browserId: string, topicSlug: string): Promise<void>;
+  /** Topic slugs this browser has server-verified stamps for. */
+  getSchoolStamps(browserId: string): Promise<string[]>;
 };
 
 class RedisStore implements WooftagStore {
@@ -169,6 +177,19 @@ class RedisStore implements WooftagStore {
     return Boolean(ok);
   }
 
+
+  async addSchoolStamp(browserId: string, topicSlug: string) {
+    const k = `wooftag:stamps:${browserId}`;
+    await this.redis.sadd(k, topicSlug);
+    await this.redis.expire(k, STAMP_TTL_SEC);
+  }
+
+  async getSchoolStamps(browserId: string): Promise<string[]> {
+    const members = await this.redis.smembers(`wooftag:stamps:${browserId}`);
+    if (!Array.isArray(members)) return [];
+    return members.filter((m): m is string => typeof m === "string" && m.length > 0);
+  }
+
   async getQueue(): Promise<QueueItem[]> {
     const raw = await this.redis.get<QueueItem[] | string>(QUEUE_KEY);
     if (!raw) return [];
@@ -197,6 +218,7 @@ class MemoryStore implements WooftagStore {
   private counts = new Map<string, number>();
   private hashes = new Map<string, string>();
   private browsers = new Map<string, string>();
+  private stamps = new Map<string, Set<string>>();
   private rl = new Map<string, { n: number; reset: number }>();
   private queue: QueueItem[] = [];
 
@@ -250,6 +272,20 @@ class MemoryStore implements WooftagStore {
     if (this.browsers.has(browserId)) return false;
     this.browsers.set(browserId, mintedAt);
     return true;
+  }
+
+
+  async addSchoolStamp(browserId: string, topicSlug: string) {
+    let set = this.stamps.get(browserId);
+    if (!set) {
+      set = new Set();
+      this.stamps.set(browserId, set);
+    }
+    set.add(topicSlug);
+  }
+
+  async getSchoolStamps(browserId: string) {
+    return [...(this.stamps.get(browserId) ?? [])];
   }
 
   async getQueue() {

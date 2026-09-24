@@ -6,7 +6,6 @@ export type WoofQuestion = {
   id: string;
   prompt: string;
   choices: WoofChoice[];
-  answer: "a" | "b" | "c";
 };
 
 export type MicroLesson = {
@@ -88,7 +87,6 @@ export const schoolTopics: SchoolTopic[] = [
             { id: "b", text: "The Sun turns off" },
             { id: "c", text: "Stars steal the sunlight" },
           ],
-          answer: "a",
         },
         {
           id: "lu-2",
@@ -98,7 +96,6 @@ export const schoolTopics: SchoolTopic[] = [
             { id: "b", text: "Yes, they go to sleep" },
             { id: "c", text: "No — the blue sky just outshines them" },
           ],
-          answer: "c",
         },
         {
           id: "lu-3",
@@ -108,7 +105,6 @@ export const schoolTopics: SchoolTopic[] = [
             { id: "b", text: "Dogs on other planets are barking at them" },
             { id: "c", text: "Earth’s wiggly air bends their skinny light" },
           ],
-          answer: "c",
         },
       ],
     },
@@ -172,7 +168,6 @@ export const schoolTopics: SchoolTopic[] = [
             { id: "b", text: "It is a giant flashlight battery" },
             { id: "c", text: "It reflects sunlight" },
           ],
-          answer: "c",
         },
         {
           id: "ob-2",
@@ -182,7 +177,6 @@ export const schoolTopics: SchoolTopic[] = [
             { id: "b", text: "They are tiny fires" },
             { id: "c", text: "Hosky is blinking Morse code at them" },
           ],
-          answer: "a",
         },
         {
           id: "ob-3",
@@ -192,7 +186,6 @@ export const schoolTopics: SchoolTopic[] = [
             { id: "b", text: "Earth getting much closer to the Sun" },
             { id: "c", text: "Earth’s axis being tipped" },
           ],
-          answer: "c",
         },
         {
           id: "ob-4",
@@ -202,7 +195,6 @@ export const schoolTopics: SchoolTopic[] = [
             { id: "b", text: "Solar" },
             { id: "c", text: "Lunar" },
           ],
-          answer: "c",
         },
       ],
     },
@@ -279,7 +271,6 @@ export const schoolTopics: SchoolTopic[] = [
             { id: "b", text: "the biggest planet" },
             { id: "c", text: "a really bright city" },
           ],
-          answer: "a",
         },
         {
           id: "ss-2",
@@ -289,7 +280,6 @@ export const schoolTopics: SchoolTopic[] = [
             { id: "b", text: "Pluto, Ceres, Eris, and Hosky" },
             { id: "c", text: "Jupiter, Saturn, Uranus, Neptune" },
           ],
-          answer: "a",
         },
         {
           id: "ss-3",
@@ -299,7 +289,6 @@ export const schoolTopics: SchoolTopic[] = [
             { id: "b", text: "always behind it, like a jet" },
             { id: "c", text: "away from the Sun" },
           ],
-          answer: "c",
         },
         {
           id: "ss-4",
@@ -309,7 +298,6 @@ export const schoolTopics: SchoolTopic[] = [
             { id: "b", text: "stuck on invisible rails" },
             { id: "c", text: "falling toward the Sun and missing" },
           ],
-          answer: "c",
         },
       ],
     },
@@ -386,7 +374,6 @@ export const schoolTopics: SchoolTopic[] = [
             { id: "b", text: "its core gets hot enough to fuse hydrogen" },
             { id: "c", text: "it gets painted yellow" },
           ],
-          answer: "b",
         },
         {
           id: "sl-2",
@@ -396,7 +383,6 @@ export const schoolTopics: SchoolTopic[] = [
             { id: "b", text: "the star is on vacation" },
             { id: "c", text: "the star is steadily fusing hydrogen" },
           ],
-          answer: "c",
         },
         {
           id: "sl-3",
@@ -406,7 +392,6 @@ export const schoolTopics: SchoolTopic[] = [
             { id: "b", text: "they get lonely" },
             { id: "c", text: "the fuel in the core changes and the outer layers puff out" },
           ],
-          answer: "c",
         },
         {
           id: "sl-4",
@@ -416,7 +401,6 @@ export const schoolTopics: SchoolTopic[] = [
             { id: "b", text: "every star, including the Sun" },
             { id: "c", text: "only stars named after dogs" },
           ],
-          answer: "a",
         },
       ],
     },
@@ -491,7 +475,6 @@ export const schoolTopics: SchoolTopic[] = [
             { id: "b", text: "the same waves, just louder" },
             { id: "c", text: "longer waves than red" },
           ],
-          answer: "a",
         },
         {
           id: "lt-2",
@@ -501,7 +484,6 @@ export const schoolTopics: SchoolTopic[] = [
             { id: "b", text: "its surface is hotter" },
             { id: "c", text: "it is shy and blushing blue" },
           ],
-          answer: "b",
         },
         {
           id: "lt-3",
@@ -511,7 +493,6 @@ export const schoolTopics: SchoolTopic[] = [
             { id: "b", text: "which elements are in it" },
             { id: "c", text: "the star’s favorite color" },
           ],
-          answer: "b",
         },
         {
           id: "lt-4",
@@ -521,7 +502,6 @@ export const schoolTopics: SchoolTopic[] = [
             { id: "b", text: "tired from the long trip and napping" },
             { id: "c", text: "painted red by the star" },
           ],
-          answer: "a",
         },
       ],
     },
@@ -611,7 +591,6 @@ export const schoolTopics: SchoolTopic[] = [
             { id: "b", text: "gas-and-dust clouds with jobs like nurseries, leftover shells, and blast clouds" },
             { id: "c", text: "giant frozen tennis balls" },
           ],
-          answer: "b",
         },
         {
           id: "ds-2",
@@ -621,7 +600,6 @@ export const schoolTopics: SchoolTopic[] = [
             { id: "b", text: "clusters only exist on Tuesdays" },
             { id: "c", text: "a cluster is a real crowd; a constellation is a connect-the-dots drawing from Earth" },
           ],
-          answer: "c",
         },
         {
           id: "ds-3",
@@ -631,7 +609,6 @@ export const schoolTopics: SchoolTopic[] = [
             { id: "b", text: "sits right in the downtown black-hole lobby" },
             { id: "c", text: "rides an arm far from the center’s heavy black-hole well" },
           ],
-          answer: "c",
         },
         {
           id: "ds-4",
@@ -641,7 +618,6 @@ export const schoolTopics: SchoolTopic[] = [
             { id: "b", text: "the nearest big spiral galaxy — a faint smudge on a dark night" },
             { id: "c", text: "Hosky’s favorite chew toy constellation" },
           ],
-          answer: "b",
         },
       ],
     },
@@ -720,7 +696,6 @@ export const schoolTopics: SchoolTopic[] = [
             { id: "b", text: "space starting hot and packed, then stretching" },
             { id: "c", text: "Hosky sneezing the galaxies into place" },
           ],
-          answer: "b",
         },
         {
           id: "ct-2",
@@ -730,7 +705,6 @@ export const schoolTopics: SchoolTopic[] = [
             { id: "b", text: "they are all on fire" },
             { id: "c", text: "the space between us stretched the light" },
           ],
-          answer: "c",
         },
         {
           id: "ct-3",
@@ -740,7 +714,6 @@ export const schoolTopics: SchoolTopic[] = [
             { id: "b", text: "leftover heat from the young universe" },
             { id: "c", text: "the Milky Way’s streetlights" },
           ],
-          answer: "b",
         },
         {
           id: "ct-4",
@@ -750,7 +723,6 @@ export const schoolTopics: SchoolTopic[] = [
             { id: "b", text: "as old as Hosky’s favorite stick" },
             { id: "c", text: "a few thousand years old" },
           ],
-          answer: "a",
         },
       ],
     },
@@ -841,7 +813,6 @@ export const schoolTopics: SchoolTopic[] = [
             { id: "b", text: "letting your eyes get dark-adapted" },
             { id: "c", text: "yelling at the stars until they brighten" },
           ],
-          answer: "b",
         },
         {
           id: "go-2",
@@ -851,7 +822,6 @@ export const schoolTopics: SchoolTopic[] = [
             { id: "b", text: "how much light its bucket collects" },
             { id: "c", text: "a giant number printed on the box" },
           ],
-          answer: "b",
         },
         {
           id: "go-3",
@@ -861,7 +831,6 @@ export const schoolTopics: SchoolTopic[] = [
             { id: "b", text: "the Moon is chewing different sized biscuits" },
             { id: "c", text: "Earth covers the Moon each week" },
           ],
-          answer: "a",
         },
         {
           id: "go-4",
@@ -871,7 +840,6 @@ export const schoolTopics: SchoolTopic[] = [
             { id: "b", text: "stars burn out every season" },
             { id: "c", text: "Earth has orbited and midnight faces a new direction" },
           ],
-          answer: "c",
         },
       ],
     },
@@ -959,7 +927,6 @@ export const schoolTopics: SchoolTopic[] = [
             { id: "b", text: "glued to the sky" },
             { id: "c", text: "held up by invisible strings" },
           ],
-          answer: "a",
         },
         {
           id: "mh-2",
@@ -969,7 +936,6 @@ export const schoolTopics: SchoolTopic[] = [
             { id: "b", text: "lands and can roll on another world" },
             { id: "c", text: "only works when Hosky waves" },
           ],
-          answer: "b",
         },
         {
           id: "mh-3",
@@ -979,7 +945,6 @@ export const schoolTopics: SchoolTopic[] = [
             { id: "b", text: "they and the station are falling together" },
             { id: "c", text: "gravity is switched off up there" },
           ],
-          answer: "b",
         },
         {
           id: "mh-4",
@@ -989,7 +954,6 @@ export const schoolTopics: SchoolTopic[] = [
             { id: "b", text: "a stack: know, watch, build, live, and wonder" },
             { id: "c", text: "just to fetch tennis balls from Mars" },
           ],
-          answer: "b",
         },
       ],
     },

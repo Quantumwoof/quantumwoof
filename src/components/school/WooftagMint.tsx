@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { schoolTopics } from "@/content/woofSchool";
 import { useWoofProgress } from "@/hooks/useWoofProgress";
 import {
   WOOFTAG_BOWL_FULL,
@@ -29,6 +30,13 @@ type MintRes = {
   error?: string;
   note?: string;
   claim?: string;
+  missingTopics?: string[];
+};
+
+type StatusRes = {
+  ok?: boolean;
+  missingTopics?: string[];
+  schoolComplete?: boolean;
 };
 
 function readSaved(): SavedTag | null {
@@ -63,16 +71,21 @@ function readSnifferMeta(): { name: string; dateLabel: string } {
   }
 }
 
+function topicTitle(slug: string): string {
+  return schoolTopics.find((t) => t.slug === slug)?.title ?? slug;
+}
+
 export function WooftagMint() {
   const { ready, isSniffer, progress, startedAt } = useWoofProgress();
   const [saved, setSaved] = useState<SavedTag | null>(null);
   const [phase, setPhase] = useState<
-    "idle" | "waiting" | "stamping" | "queued" | "already" | "error"
+    "idle" | "waiting" | "stamping" | "queued" | "already" | "error" | "needs_checks"
   >("idle");
   const [queue, setQueue] = useState<{ token: string; position?: number } | null>(
     null,
   );
   const [error, setError] = useState("");
+  const [missingTopics, setMissingTopics] = useState<string[]>([]);
   const [copied, setCopied] = useState(false);
   const [meta, setMeta] = useState({ name: "", dateLabel: "" });
   const startedRef = useRef(false);
@@ -116,8 +129,18 @@ export function WooftagMint() {
 
     (async () => {
       try {
-        await fetch("/api/wooftag/status");
+        const statusRes = await fetch("/api/wooftag/status");
+        const statusJson = (await statusRes.json()) as StatusRes;
         if (cancelled) return;
+
+        const missing = Array.isArray(statusJson.missingTopics)
+          ? statusJson.missingTopics
+          : [];
+        if (missing.length > 0) {
+          setMissingTopics(missing);
+          setPhase("needs_checks");
+          return;
+        }
 
         await new Promise((r) => setTimeout(r, WOOFTAG_MIN_GATE_MS + 400));
         if (cancelled) return;
@@ -149,6 +172,14 @@ export function WooftagMint() {
           setPhase("stamping");
           minted = await postMint();
           if (cancelled) return;
+        }
+
+        if (minted.error === "school_incomplete") {
+          setMissingTopics(
+            Array.isArray(minted.missingTopics) ? minted.missingTopics : [],
+          );
+          setPhase("needs_checks");
+          return;
         }
 
         if (minted.status === "minted" && minted.tag && isWooftagFormat(minted.tag)) {
@@ -296,6 +327,27 @@ export function WooftagMint() {
           This browser already sniffed a Wooftag. If you don’t see it, the local copy was
           cleared — Hosky doesn’t reprint.
         </p>
+      ) : null}
+      {phase === "needs_checks" ? (
+        <div className="mt-4 space-y-3">
+          <p className="text-sm text-lavender">
+            Your local progress is saved, but Hosky still needs a fresh woof check for
+            {missingTopics.length === 1 ? " this courtyard" : " these courtyards"} before
+            issuing a Wooftag. Pass each check once more (answers stay the same).
+          </p>
+          <ul className="flex flex-col gap-2">
+            {missingTopics.map((slug) => (
+              <li key={slug}>
+                <Link
+                  href={`/school/${slug}`}
+                  className="inline-flex rounded-full border border-electric/35 bg-electric/10 px-3 py-1.5 text-sm text-electric transition hover:border-electric/60"
+                >
+                  Re-check · {topicTitle(slug)} →
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
       ) : null}
       {phase === "error" ? (
         <p className="mt-4 text-sm text-lavender">{error}</p>

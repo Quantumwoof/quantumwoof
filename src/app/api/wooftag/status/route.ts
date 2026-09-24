@@ -1,14 +1,19 @@
 import type { NextRequest } from "next/server";
+import { schoolTopics } from "@/content/woofSchool";
 import {
   WOOFTAG_CLAIM_LATER,
   WOOFTAG_DAILY_CAP,
   utcDateKey,
 } from "@/lib/wooftag";
 import { getWooftagStore, storeKind } from "@/lib/wooftag-store";
-import { clientIp, ensureGateCookies, json } from "@/lib/wooftag-http";
+import { clientIp, ensureGateCookies, json, readBrowserId } from "@/lib/wooftag-http";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+const READY_TOPIC_SLUGS = schoolTopics
+  .filter((t) => t.status === "ready")
+  .map((t) => t.slug);
 
 export async function GET(req: NextRequest) {
   const store = getWooftagStore();
@@ -49,6 +54,10 @@ export async function GET(req: NextRequest) {
   }
 
   const day = await store.getDay();
+  const browserId = readBrowserId(req);
+  const stamps = browserId ? await store.getSchoolStamps(browserId) : [];
+  const stamped = new Set(stamps);
+  const missingTopics = READY_TOPIC_SLUGS.filter((s) => !stamped.has(s));
   return json(
     {
       ok: true,
@@ -59,6 +68,9 @@ export async function GET(req: NextRequest) {
       queueLength: day.queueLength,
       store: store.kind,
       claim: WOOFTAG_CLAIM_LATER,
+      stamps,
+      missingTopics,
+      schoolComplete: missingTopics.length === 0,
     },
     { cookies },
   );

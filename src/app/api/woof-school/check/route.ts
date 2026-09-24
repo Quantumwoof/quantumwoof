@@ -1,0 +1,103 @@
+import type { NextRequest } from "next/server";
+import { getTopic } from "@/content/woofSchool";
+import { gradeWoofCheck } from "@/content/woofSchool-answers";
+import { getWooftagStore } from "@/lib/wooftag-store";
+import { clientIp, ensureBrowserId, json } from "@/lib/wooftag-http";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+type CheckBody = {
+  topic?: unknown;
+  answers?: unknown;
+};
+
+export async function POST(req: NextRequest) {
+  const store = getWooftagStore();
+  if (!store) {
+    return json(
+      {
+        ok: false,
+        error: "store_unavailable",
+        message: "Woof School check pad is napping — try again later.",
+      },
+      { status: 503 },
+    );
+  }
+
+  const ip = clientIp(req);
+  const burst = await store.rateLimit(`check:${ip}`, 60, 10 * 60);
+  if (!burst.ok) {
+    return json(
+      {
+        ok: false,
+        error: "rate_limited",
+        message: "Easy, pup — try again in a minute.",
+      },
+      { status: 429 },
+    );
+  }
+
+  const browser = ensureBrowserId(req);
+  const pendingCookies = browser.cookie ? [browser.cookie] : [];
+
+  let body: CheckBody = {};
+  try {
+    body = (await req.json()) as CheckBody;
+  } catch {
+    body = {};
+  }
+
+  const topicSlug = typeof body.topic === "string" ? body.topic.trim() : "";
+  const topic = topicSlug ? getTopic(topicSlug) : undefined;
+  if (!topic || topic.status !== "ready" || !topic.woofCheck) {
+    return json(
+      {
+        ok: false,
+        error: "unknown_topic",
+        message: "That courtyard is not open for a woof check.",
+      },
+      { status: 400, cookies: pendingCookies },
+    );
+  }
+
+  const answersRaw =
+    body.answers && typeof body.answers === "object" && !Array.isArray(body.answers)
+      ? (body.answers as Record<string, unknown>)
+      : {};
+
+  const graded = gradeWoofCheck(topic.slug, answersRaw);
+  if (!graded) {
+    return json(
+      {
+        ok: false,
+        error: "unknown_topic",
+        message: "That courtyard is not open for a woof check.",
+      },
+      { status: 400, cookies: pendingCookies },
+    );
+  }
+
+  const passAt = topic.woofCheck.passAt;
+  const passed = graded.score >= passAt;
+
+  if (passed) {
+    await store.addSchoolStamp(browser.id, topic.slug);
+  }
+
+  const stamps = await store.getSchoolStamps(browser.id);
+
+  return json(
+    {
+      ok: true,
+      topic: topic.slug,
+      passed,
+      score: graded.score,
+      passAt,
+      total: graded.total,
+      results: graded.results,
+      stamps,
+    },
+    { cookies: pendingCookies },
+  );
+}
