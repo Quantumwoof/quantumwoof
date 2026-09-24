@@ -5,7 +5,7 @@ import {
   WOOFTAG_DAILY_CAP,
   utcDateKey,
 } from "@/lib/wooftag";
-import { getWooftagStore, storeKind } from "@/lib/wooftag-store";
+import { getWooftagStore } from "@/lib/wooftag-store";
 import { clientIp, ensureGateCookies, json, readBrowserId } from "@/lib/wooftag-http";
 
 export const runtime = "nodejs";
@@ -20,18 +20,17 @@ export async function GET(req: NextRequest) {
   const cookies = ensureGateCookies(req);
 
   if (!store) {
+    console.error("[wooftag/status] durable store unavailable");
     return json(
       {
         ok: false,
-        error: "store_unavailable",
-        message:
-          "Wooftag bowl is napping — set UPSTASH_REDIS_REST_URL + TOKEN (or Vercel KV) and WOOFTAG_PEPPER.",
+        error: "service_unavailable",
+        message: "Wooftag bowl is napping — try again later.",
         utcDate: utcDateKey(),
         cap: WOOFTAG_DAILY_CAP,
         minted: 0,
         remaining: 0,
         queueLength: 0,
-        store: storeKind(),
         claim: WOOFTAG_CLAIM_LATER,
       },
       { status: 503, cookies },
@@ -66,7 +65,6 @@ export async function GET(req: NextRequest) {
       minted: day.minted,
       remaining: day.remaining,
       queueLength: day.queueLength,
-      store: store.kind,
       claim: WOOFTAG_CLAIM_LATER,
       stamps,
       missingTopics,

@@ -15,10 +15,11 @@ type CheckBody = {
 export async function POST(req: NextRequest) {
   const store = getWooftagStore();
   if (!store) {
+    console.error("[woof-school/check] durable store unavailable");
     return json(
       {
         ok: false,
-        error: "store_unavailable",
+        error: "service_unavailable",
         message: "Woof School check pad is napping — try again later.",
       },
       { status: 503 },

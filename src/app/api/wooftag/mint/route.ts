@@ -41,12 +41,12 @@ type MintBody = {
 export async function POST(req: NextRequest) {
   const store = getWooftagStore();
   if (!store) {
+    console.error("[wooftag/mint] durable store unavailable");
     return json(
       {
         ok: false,
-        error: "store_unavailable",
-        message:
-          "Wooftag bowl is napping — set UPSTASH_REDIS_REST_URL + TOKEN (or Vercel KV) and WOOFTAG_PEPPER.",
+        error: "service_unavailable",
+        message: "Wooftag bowl is napping — try again later.",
       },
       { status: 503 },
     );
@@ -54,11 +54,12 @@ export async function POST(req: NextRequest) {
 
   const pepper = getWooftagPepper();
   if (!pepper) {
+    console.error("[wooftag/mint] issue secret missing");
     return json(
       {
         ok: false,
-        error: "pepper_missing",
-        message: "Wooftag cannot issue without WOOFTAG_PEPPER.",
+        error: "service_unavailable",
+        message: "Wooftag bowl is napping — try again later.",
       },
       { status: 503 },
     );
