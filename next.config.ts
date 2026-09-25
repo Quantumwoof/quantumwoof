@@ -29,8 +29,11 @@ const contentSecurityPolicy = [
   "frame-ancestors 'none'",
   "form-action 'self' https://x.com https://twitter.com",
   "img-src 'self' data: blob: https:",
-  // App Router + Analytics use small inline/bootstrap scripts.
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://va.vercel-scripts.com",
+  // App Router + Analytics use small inline/bootstrap scripts. No 'unsafe-eval'
+  // in production builds; `next dev` (React dev tooling / HMR) still needs it.
+  `script-src 'self' 'unsafe-inline'${
+    process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : ""
+  } https://va.vercel-scripts.com`,
   "style-src 'self' 'unsafe-inline'",
   "font-src 'self' data:",
   "worker-src 'self' blob:",
