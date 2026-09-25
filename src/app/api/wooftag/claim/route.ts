@@ -16,14 +16,13 @@ import {
   WOOFTAG_X_MESSAGES,
   isWooftagXClaimEnabled,
 } from "@/lib/wooftag-x";
-import { getWooftagStore, type QueueItem } from "@/lib/wooftag-store";
+import { QUEUE_STALE_MS, getWooftagStore } from "@/lib/wooftag-store";
 import {
   clientIp,
   ensureBrowserId,
   gateTooFresh,
   json,
   queueCookie,
-  readQueueToken,
 } from "@/lib/wooftag-http";
 import { rejectForeignOrigin } from "@/lib/request-origin";
 
@@ -34,9 +33,7 @@ const READY_SLUGS = schoolTopics
   .filter((t) => t.status === "ready")
   .map((t) => t.slug);
 
-const STALE_QUEUE_MS = 36 * 60 * 60 * 1000;
-
-type ClaimBody = { queueToken?: unknown };
+const STALE_QUEUE_MS = QUEUE_STALE_MS;
 
 /**
  * Claim today's Wooftag with a signed-in eligible X account.
@@ -156,84 +153,32 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  let body: ClaimBody = {};
-  try {
-    body = (await req.json()) as ClaimBody;
-  } catch {
-    body = {};
-  }
-
-  const bodyQueue =
-    typeof body.queueToken === "string" && body.queueToken.trim()
-      ? body.queueToken.trim()
-      : undefined;
-  const queueToken = bodyQueue || readQueueToken(req) || session.uid;
-
+  // The queue identity for a claim is the signed-in X account. Client-supplied
+  // tokens (body/cookie) are ignored: X user ids are public, so accepting them
+  // would let anyone pass the head check with someone else's id and jump the line.
   const now = Date.now();
-  const day = await store.getDay(today);
-  const queue = pruneQueue(await store.getQueue(), now);
+  const admission = await store.admitOrQueue({
+    utcDate: today,
+    token: session.uid,
+    newToken: session.uid,
+    now,
+    staleMs: STALE_QUEUE_MS,
+  });
 
-  if (day.remaining <= 0) {
-    const { items, token, position } = enqueue(queue, session.uid, now);
-    await store.setQueue(items);
+  if (admission.status === "queued") {
     return json(
       {
         ok: true,
         status: "queued",
-        queueToken: token,
-        position,
-        remaining: 0,
+        queueToken: admission.token,
+        position: admission.position,
+        remaining: admission.remaining,
         utcDate: today,
         cap: WOOFTAG_DAILY_CAP,
         message: WOOFTAG_BOWL_FULL,
         claim: WOOFTAG_CLAIM_LATER,
       },
-      { cookies: [...pendingCookies, queueCookie(token)] },
-    );
-  }
-
-  if (queue.length > 0) {
-    const head = queue[0];
-    if (queueToken !== head?.id) {
-      const { items, token, position } = enqueue(queue, session.uid, now);
-      await store.setQueue(items);
-      return json(
-        {
-          ok: true,
-          status: "queued",
-          queueToken: token,
-          position,
-          remaining: day.remaining,
-          utcDate: today,
-          cap: WOOFTAG_DAILY_CAP,
-          message: WOOFTAG_BOWL_FULL,
-          claim: WOOFTAG_CLAIM_LATER,
-        },
-        { cookies: [...pendingCookies, queueCookie(token)] },
-      );
-    }
-  }
-
-  const nextQueue = queue.filter((q) => q.id !== session.uid);
-  if (nextQueue.length !== queue.length) await store.setQueue(nextQueue);
-
-  const slot = await store.reserveDailySlot(today);
-  if (!slot.reserved) {
-    const { items, token, position } = enqueue(nextQueue, session.uid, now);
-    await store.setQueue(items);
-    return json(
-      {
-        ok: true,
-        status: "queued",
-        queueToken: token,
-        position,
-        remaining: 0,
-        utcDate: slot.utcDate,
-        cap: WOOFTAG_DAILY_CAP,
-        message: WOOFTAG_BOWL_FULL,
-        claim: WOOFTAG_CLAIM_LATER,
-      },
-      { cookies: [...pendingCookies, queueCookie(token)] },
+      { cookies: [...pendingCookies, queueCookie(admission.token)] },
     );
   }
 
@@ -341,19 +286,4 @@ export async function POST(req: NextRequest) {
     },
     { cookies: pendingCookies },
   );
-}
-
-function pruneQueue(items: QueueItem[], now: number): QueueItem[] {
-  return items.filter((i) => i && i.id && now - i.t < STALE_QUEUE_MS);
-}
-
-function enqueue(
-  items: QueueItem[],
-  xUserId: string,
-  now: number,
-): { items: QueueItem[]; token: string; position: number } {
-  const idx = items.findIndex((i) => i.id === xUserId);
-  if (idx >= 0) return { items, token: xUserId, position: idx + 1 };
-  const next = [...items, { id: xUserId, t: now }];
-  return { items: next, token: xUserId, position: next.length };
 }

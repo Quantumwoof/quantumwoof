@@ -8,9 +8,10 @@ import {
   generateWooftag,
   isWooftagFormat,
   newOpaqueId,
+  utcDateKey,
 } from "@/lib/wooftag";
 import { getWooftagPepper, wooftagFingerprint } from "@/lib/wooftag-hash";
-import { getWooftagStore, type QueueItem } from "@/lib/wooftag-store";
+import { QUEUE_STALE_MS, getWooftagStore } from "@/lib/wooftag-store";
 import {
   WOOFTAG_X_MESSAGES,
   isWooftagXClaimEnabled,
@@ -35,7 +36,9 @@ const READY_SLUGS = new Set(
   schoolTopics.filter((t) => t.status === "ready").map((t) => t.slug),
 );
 
-const STALE_QUEUE_MS = 36 * 60 * 60 * 1000;
+const STALE_QUEUE_MS = QUEUE_STALE_MS;
+/** newOpaqueId(12) → 20 glyphs from the Wooftag alphabet. */
+const QUEUE_TOKEN_RE = /^[0-9A-HJKMNP-TV-Z]{8,64}$/;
 
 type MintBody = {
   woofed?: unknown;
@@ -175,80 +178,37 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const bodyQueue =
-    typeof body.queueToken === "string" && body.queueToken.trim()
-      ? body.queueToken.trim()
-      : undefined;
-  const queueToken = bodyQueue || readQueueToken(req);
-
-  const day = await store.getDay();
-  const queue = pruneQueue(await store.getQueue(), now);
-
-  if (day.remaining <= 0) {
-    const { items, token, position } = enqueue(queue, queueToken, now);
-    await store.setQueue(items);
-    return json(
-      {
-        ok: true,
-        status: "queued",
-        queueToken: token,
-        position,
-        remaining: 0,
-        utcDate: day.utcDate,
-        cap: WOOFTAG_DAILY_CAP,
-        message: WOOFTAG_BOWL_FULL,
-        claim: WOOFTAG_CLAIM_LATER,
-      },
-      { cookies: [...pendingCookies, queueCookie(token)] },
-    );
-  }
+  const queueToken = validQueueToken(body.queueToken) || validQueueToken(readQueueToken(req));
 
   // Bowl is open (new UTC day = fresh 200; unused slots never roll over).
   // FIFO overflow from prior days drains first: only the head may mint while
   // the queue is non-empty; others keep/join the line. When empty, new mints
-  // fill remaining slots up to 200.
-  if (queue.length > 0) {
-    const head = queue[0];
-    if (!queueToken || queueToken !== head?.id) {
-      const { items, token, position } = enqueue(queue, queueToken, now);
-      await store.setQueue(items);
-      return json(
-        {
-          ok: true,
-          status: "queued",
-          queueToken: token,
-          position,
-          remaining: day.remaining,
-          utcDate: day.utcDate,
-          cap: WOOFTAG_DAILY_CAP,
-          message: WOOFTAG_BOWL_FULL,
-          claim: WOOFTAG_CLAIM_LATER,
-        },
-        { cookies: [...pendingCookies, queueCookie(token)] },
-      );
-    }
-  }
+  // fill remaining slots up to 200. The store makes this decision and takes
+  // the slot atomically, so concurrent requests cannot overshoot the cap or
+  // share a queue position.
+  const today = utcDateKey(now);
+  const admission = await store.admitOrQueue({
+    utcDate: today,
+    token: queueToken,
+    newToken: newOpaqueId(12),
+    now,
+    staleMs: STALE_QUEUE_MS,
+  });
 
-  const nextQueue = queueToken ? queue.filter((q) => q.id !== queueToken) : queue;
-  if (nextQueue.length !== queue.length) await store.setQueue(nextQueue);
-
-  const slot = await store.reserveDailySlot(day.utcDate);
-  if (!slot.reserved) {
-    const { items, token, position } = enqueue(nextQueue, queueToken, now);
-    await store.setQueue(items);
+  if (admission.status === "queued") {
     return json(
       {
         ok: true,
         status: "queued",
-        queueToken: token,
-        position,
-        remaining: 0,
-        utcDate: slot.utcDate,
+        queueToken: admission.token,
+        position: admission.position,
+        remaining: admission.remaining,
+        utcDate: admission.utcDate,
         cap: WOOFTAG_DAILY_CAP,
         message: WOOFTAG_BOWL_FULL,
         claim: WOOFTAG_CLAIM_LATER,
       },
-      { cookies: [...pendingCookies, queueCookie(token)] },
+      { cookies: [...pendingCookies, queueCookie(admission.token)] },
     );
   }
 
@@ -263,7 +223,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (!stored || !tag) {
-    await store.releaseDailySlot(day.utcDate);
+    await store.releaseDailySlot(today);
     return json(
       { ok: false, error: "issue_failed", message: "Hosky dropped the stamp. Try again." },
       { status: 500, cookies: pendingCookies },
@@ -273,21 +233,21 @@ export async function POST(req: NextRequest) {
   // Bind browser id in the store so clearing localStorage alone cannot remint.
   const bound = await store.bindBrowser(browser.id, mintedAt);
   if (!bound) {
-    await store.releaseDailySlot(day.utcDate);
+    await store.releaseDailySlot(today);
     return json(
       {
         ok: true,
         status: "already_issued",
         message: ALREADY_SNIFFED_COPY,
-        remaining: (await store.getDay(day.utcDate)).remaining,
-        utcDate: day.utcDate,
+        remaining: (await store.getDay(today)).remaining,
+        utcDate: today,
         claim: WOOFTAG_CLAIM_LATER,
       },
       { cookies: [...pendingCookies, doneCookie()] },
     );
   }
 
-  const after = await store.getDay(day.utcDate);
+  const after = await store.getDay(today);
   return json(
     {
       ok: true,
@@ -303,22 +263,9 @@ export async function POST(req: NextRequest) {
   );
 }
 
-function pruneQueue(items: QueueItem[], now: number): QueueItem[] {
-  return items.filter((i) => i && i.id && now - i.t < STALE_QUEUE_MS);
-}
-
-function enqueue(
-  items: QueueItem[],
-  existing: string | undefined,
-  now: number,
-): { items: QueueItem[]; token: string; position: number } {
-  if (existing) {
-    const idx = items.findIndex((i) => i.id === existing);
-    if (idx >= 0) {
-      return { items, token: existing, position: idx + 1 };
-    }
-  }
-  const token = existing || newOpaqueId(12);
-  const next = [...items, { id: token, t: now }];
-  return { items: next, token, position: next.length };
+/** Queue tokens are server-issued opaque ids — reject anything else (size/charset). */
+function validQueueToken(raw: unknown): string | undefined {
+  if (typeof raw !== "string") return undefined;
+  const v = raw.trim();
+  return QUEUE_TOKEN_RE.test(v) ? v : undefined;
 }

@@ -13,6 +13,12 @@
  * new day's bowl opens, queued sniffers mint first as they return, then
  * new mints fill whatever of the 200 remains.
  *
+ * Atomicity: every read-modify-write on shared counters runs in one step —
+ * Redis Lua scripts in production (EVALSHA), synchronous critical sections in
+ * the in-memory store. `admitOrQueue` decides "mint now" vs "join the FIFO"
+ * and takes the daily slot in the same script, so concurrent requests can
+ * never exceed the cap or share a queue position.
+ *
  * Browser lock: `wooftag:browser:<id>` binds the durable `qw_wooftag_browser`
  * cookie id after a successful mint (one sniff per browser).
  *
@@ -63,6 +69,24 @@ export type DayCounts = {
 };
 
 export type StoreKind = "upstash" | "memory" | "none";
+
+/** Default age after which a queue entry is dropped (the sniffer never came back). */
+export const QUEUE_STALE_MS = 36 * 60 * 60 * 1000;
+
+export type AdmitOptions = {
+  /** UTC date key of the daily counter to charge. */
+  utcDate: string;
+  /** Caller's existing queue id (cookie/body token, or X user id). */
+  token?: string;
+  /** Id to use when the caller has no token and must join the queue. */
+  newToken: string;
+  now: number;
+  staleMs?: number;
+};
+
+export type AdmitResult =
+  | ({ status: "reserved" } & DayCounts)
+  | ({ status: "queued"; token: string; position: number } & DayCounts);
 
 const DAY_TTL_SEC = 60 * 60 * 24 * 4;
 const HASH_TTL_SEC = 60 * 60 * 24 * 400;
@@ -152,7 +176,14 @@ export type WooftagStore = {
   /** Bind browser id after successful mint. Returns false if already bound. */
   bindBrowser(browserId: string, mintedAt: string): Promise<boolean>;
   getQueue(): Promise<QueueItem[]>;
-  setQueue(items: QueueItem[]): Promise<void>;
+  /**
+   * Atomically: prune stale queue entries, then either take one of today's
+   * slots (bowl open and the caller is the queue head or the queue is empty —
+   * the caller's entry is removed) or put the caller in the FIFO queue
+   * (existing position kept; new entries appended). Never exceeds the cap and
+   * never hands out the same position twice.
+   */
+  admitOrQueue(opts: AdmitOptions): Promise<AdmitResult>;
   /** Record a passed woof-check stamp for this browser (undated Redis set — anonymous mint). */
   addSchoolStamp(browserId: string, topicSlug: string): Promise<void>;
   /** Undated topic slugs (anonymous mint while X claim flag is off). */
@@ -174,14 +205,31 @@ export type WooftagStore = {
   listXClaimHistory(xUserId: string): Promise<XClaimHistoryItem[]>;
 };
 
+/** Per-client cache of loaded scripts (EVALSHA first, EVAL on NOSCRIPT). */
+const scriptCache = new WeakMap<Redis, Map<string, ReturnType<Redis["createScript"]>>>();
+
 class RedisStore implements WooftagStore {
   kind: StoreKind = "upstash";
   constructor(private redis: Redis) {}
 
+  private runScript(script: string, keys: string[], args: (string | number)[]) {
+    let byScript = scriptCache.get(this.redis);
+    if (!byScript) {
+      byScript = new Map();
+      scriptCache.set(this.redis, byScript);
+    }
+    let s = byScript.get(script);
+    if (!s) {
+      s = this.redis.createScript(script);
+      byScript.set(script, s);
+    }
+    return s.exec(keys, args.map(String));
+  }
+
   async rateLimit(key: string, limit: number, windowSec: number) {
     const k = `wooftag:rl:${key}`;
-    const count = await this.redis.incr(k);
-    if (count === 1) await this.redis.expire(k, windowSec);
+    // INCR + EXPIRE in one script so a crash can never leave a TTL-less counter.
+    const count = Number(await this.runScript(LUA_RATE_LIMIT, [k], [windowSec])) || 0;
     return { ok: count <= limit, count };
   }
 
@@ -200,22 +248,52 @@ class RedisStore implements WooftagStore {
 
   async reserveDailySlot(utcDate = utcDateKey()) {
     // Per-UTC-day counter — a new date key resets to 0; unused yesterday slots are gone.
+    // Check-and-increment in one script: the counter never goes past the cap.
     const k = `wooftag:day:${utcDate}`;
-    const minted = await this.redis.incr(k);
-    if (minted === 1) await this.redis.expire(k, DAY_TTL_SEC);
-    if (minted > WOOFTAG_DAILY_CAP) {
-      await this.redis.decr(k);
-      const day = await this.getDay(utcDate);
-      return { reserved: false, ...day };
-    }
+    const n = Number(
+      await this.runScript(LUA_RESERVE_SLOT, [k], [WOOFTAG_DAILY_CAP, DAY_TTL_SEC]),
+    );
     const day = await this.getDay(utcDate);
-    return { reserved: true, ...day };
+    return { reserved: n > 0, ...day };
   }
 
   async releaseDailySlot(utcDate = utcDateKey()) {
-    const k = `wooftag:day:${utcDate}`;
-    const n = await this.redis.decr(k);
-    if (n < 0) await this.redis.set(k, 0, { ex: DAY_TTL_SEC });
+    await this.runScript(LUA_RELEASE_SLOT, [`wooftag:day:${utcDate}`], []);
+  }
+
+  async admitOrQueue(opts: AdmitOptions): Promise<AdmitResult> {
+    const raw = await this.runScript(
+      LUA_ADMIT_OR_QUEUE,
+      [QUEUE_KEY, `wooftag:day:${opts.utcDate}`],
+      [
+        opts.token ?? "",
+        opts.newToken,
+        Math.floor(opts.now),
+        opts.staleMs ?? QUEUE_STALE_MS,
+        WOOFTAG_DAILY_CAP,
+        DAY_TTL_SEC,
+      ],
+    );
+    const r = Array.isArray(raw) ? raw : [];
+    const minted = Number(r[2] ?? 0) || 0;
+    const base: DayCounts = {
+      utcDate: opts.utcDate,
+      minted,
+      remaining: Math.max(0, WOOFTAG_DAILY_CAP - minted),
+      cap: WOOFTAG_DAILY_CAP,
+      queueLength: Number(r[3] ?? 0) || 0,
+    };
+    if (r[0] === "reserved") return { status: "reserved", ...base };
+    if (r[0] === "queued") {
+      return {
+        status: "queued",
+        // Upstash auto-deserializes numeric-looking strings (e.g. X user ids).
+        token: String(r[4] ?? ""),
+        position: Number(r[1] ?? 0) || 0,
+        ...base,
+      };
+    }
+    throw new Error("wooftag admit script returned an unexpected reply");
   }
 
   async putTagFingerprint(fp: WooftagFingerprint, mintedAt: string) {
@@ -342,9 +420,6 @@ class RedisStore implements WooftagStore {
     return [];
   }
 
-  async setQueue(items: QueueItem[]) {
-    await this.redis.set(QUEUE_KEY, items);
-  }
 }
 
 /** Local-dev only. Lost on process restart. Never used in production. */
@@ -394,6 +469,25 @@ class MemoryStore implements WooftagStore {
   async releaseDailySlot(utcDate = utcDateKey()) {
     const n = this.counts.get(utcDate) ?? 0;
     this.counts.set(utcDate, Math.max(0, n - 1));
+  }
+
+  async admitOrQueue(opts: AdmitOptions): Promise<AdmitResult> {
+    // No awaits inside: the whole decision runs as one critical section,
+    // mirroring the Redis Lua script.
+    const minted = this.counts.get(opts.utcDate) ?? 0;
+    const decision = decideAdmission(this.queue, minted, opts);
+    this.queue = decision.queue;
+    if (decision.status === "reserved") this.counts.set(opts.utcDate, minted + 1);
+    const nowMinted = this.counts.get(opts.utcDate) ?? 0;
+    const base: DayCounts = {
+      utcDate: opts.utcDate,
+      minted: nowMinted,
+      remaining: Math.max(0, WOOFTAG_DAILY_CAP - nowMinted),
+      cap: WOOFTAG_DAILY_CAP,
+      queueLength: this.queue.length,
+    };
+    if (decision.status === "reserved") return { status: "reserved", ...base };
+    return { status: "queued", token: decision.token, position: decision.position, ...base };
   }
 
   async putTagFingerprint(fp: WooftagFingerprint, mintedAt: string) {
@@ -478,10 +572,152 @@ class MemoryStore implements WooftagStore {
     return [...this.queue];
   }
 
-  async setQueue(items: QueueItem[]) {
-    this.queue = [...items];
-  }
 }
+
+type AdmissionDecision =
+  | { status: "reserved"; queue: QueueItem[] }
+  | { status: "queued"; queue: QueueItem[]; token: string; position: number };
+
+/**
+ * Pure FIFO/cap decision shared by the in-memory store (and mirrored by
+ * LUA_ADMIT_OR_QUEUE). The bowl is open while `minted < cap`; queued sniffers
+ * from earlier days drain first — only the head may take a slot while the
+ * queue is non-empty; everyone else keeps (or joins) their place in line.
+ */
+export function decideAdmission(
+  queue: QueueItem[],
+  minted: number,
+  opts: AdmitOptions,
+): AdmissionDecision {
+  const stale = opts.staleMs ?? QUEUE_STALE_MS;
+  const live = queue.filter(
+    (i) =>
+      i && typeof i.id === "string" && i.id !== "" && typeof i.t === "number" &&
+      opts.now - i.t < stale,
+  );
+  const token = opts.token ?? "";
+
+  const enqueue = (): AdmissionDecision => {
+    if (token) {
+      const idx = live.findIndex((i) => i.id === token);
+      if (idx >= 0) return { status: "queued", queue: live, token, position: idx + 1 };
+    }
+    const id = token || opts.newToken;
+    const next = [...live, { id, t: opts.now }];
+    return { status: "queued", queue: next, token: id, position: next.length };
+  };
+
+  if (minted >= WOOFTAG_DAILY_CAP) return enqueue();
+  if (live.length > 0 && live[0]?.id !== token) return enqueue();
+  return {
+    status: "reserved",
+    queue: token ? live.filter((i) => i.id !== token) : live,
+  };
+}
+
+/** KEYS[1]=counter · ARGV[1]=window seconds → new count. */
+const LUA_RATE_LIMIT = `
+local c = redis.call('INCR', KEYS[1])
+if c == 1 or redis.call('TTL', KEYS[1]) < 0 then
+  redis.call('EXPIRE', KEYS[1], tonumber(ARGV[1]))
+end
+return c
+`;
+
+/** KEYS[1]=day counter · ARGV[1]=cap, ARGV[2]=ttl → new count, or 0 when full. */
+const LUA_RESERVE_SLOT = `
+local n = tonumber(redis.call('GET', KEYS[1]) or '0') or 0
+if n >= tonumber(ARGV[1]) then return 0 end
+n = redis.call('INCR', KEYS[1])
+if redis.call('TTL', KEYS[1]) < 0 then redis.call('EXPIRE', KEYS[1], tonumber(ARGV[2])) end
+return n
+`;
+
+/** KEYS[1]=day counter → decrement, floored at 0. */
+const LUA_RELEASE_SLOT = `
+local n = tonumber(redis.call('GET', KEYS[1]) or '0') or 0
+if n > 0 then return redis.call('DECR', KEYS[1]) end
+return 0
+`;
+
+/**
+ * KEYS[1]=queue (JSON array of {id,t} — same format the app always stored),
+ * KEYS[2]=day counter.
+ * ARGV: token, newToken, now(ms), staleMs, cap, dayTtl.
+ * Reply: {status, position, minted, queueLength, token}.
+ */
+const LUA_ADMIT_OR_QUEUE = `
+local token = ARGV[1]
+local now = tonumber(ARGV[3])
+local stale = tonumber(ARGV[4])
+local cap = tonumber(ARGV[5])
+
+local q = {}
+local raw = redis.call('GET', KEYS[1])
+if raw then
+  local ok, parsed = pcall(cjson.decode, raw)
+  if ok and type(parsed) == 'string' then ok, parsed = pcall(cjson.decode, parsed) end
+  if ok and type(parsed) == 'table' then q = parsed end
+end
+
+local live = {}
+local changed = false
+for _, it in ipairs(q) do
+  if type(it) == 'table' and type(it.id) == 'string' and it.id ~= ''
+    and type(it.t) == 'number' and (now - it.t) < stale then
+    live[#live + 1] = { id = it.id, t = it.t }
+  else
+    changed = true
+  end
+end
+
+local function save()
+  if #live == 0 then
+    redis.call('SET', KEYS[1], '[]')
+  else
+    redis.call('SET', KEYS[1], cjson.encode(live))
+  end
+end
+
+local function find(id)
+  for i, it in ipairs(live) do
+    if it.id == id then return i end
+  end
+  return 0
+end
+
+local minted = tonumber(redis.call('GET', KEYS[2]) or '0') or 0
+
+local function enqueue()
+  if token ~= '' then
+    local idx = find(token)
+    if idx > 0 then
+      if changed then save() end
+      return { 'queued', idx, minted, #live, token }
+    end
+  end
+  local id = token
+  if id == '' then id = ARGV[2] end
+  live[#live + 1] = { id = id, t = now }
+  save()
+  return { 'queued', #live, minted, #live, id }
+end
+
+if minted >= cap then return enqueue() end
+if #live > 0 and live[1].id ~= token then return enqueue() end
+
+if token ~= '' then
+  local idx = find(token)
+  if idx > 0 then
+    table.remove(live, idx)
+    changed = true
+  end
+end
+if changed then save() end
+local n = redis.call('INCR', KEYS[2])
+if redis.call('TTL', KEYS[2]) < 0 then redis.call('EXPIRE', KEYS[2], tonumber(ARGV[6])) end
+return { 'reserved', 0, n, #live, token }
+`;
 
 function normalizeXClaim(raw: unknown): XClaimRecord | null {
   if (!raw || typeof raw !== "object") return null;
@@ -533,6 +769,11 @@ export function getWooftagStore(): WooftagStore | null {
     return memorySingleton;
   }
   return null;
+}
+
+/** Test-only: a Redis-backed store over an explicit client (local Redis tests). */
+export function createRedisStoreForTests(redis: Redis): WooftagStore {
+  return new RedisStore(redis);
 }
 
 /** Test-only: plant a legacy-hashed tag in the in-memory store. */
