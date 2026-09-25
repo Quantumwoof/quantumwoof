@@ -30,6 +30,10 @@ export const WOOFTAG_X_MESSAGES = {
     "This X account isn’t eligible for a Wooftag tip right now. Learning stays open.",
   dailyHint:
     "You can sign in daily to claim a Wooftag — pass today’s Woof School quizzes, then claim.",
+  browserAlreadyClaimedToday:
+    "This browser already claimed today’s Wooftag. Come back after 1 AM Lagos / midnight UTC.",
+  browserRequired:
+    "Refresh this page and pass today’s woof checks in this browser, then claim.",
 } as const;
 
 /**

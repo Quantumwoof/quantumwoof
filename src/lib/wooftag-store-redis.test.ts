@@ -175,6 +175,60 @@ run("Redis store (local Redis via Upstash REST shim)", () => {
     expect(Number(await client.send("TTL", ["wooftag:rl:t:1"]))).toBeGreaterThan(0);
   });
 
+  test("browser-day lock: racing owners from one browser → one slot, one lock (~48h)", async () => {
+    const today = utcDateKey();
+    const results = await Promise.all(
+      Array.from({ length: 20 }, (_, i) =>
+        store.admitOrQueue({
+          utcDate: today,
+          token: `OWNER${i}`,
+          newToken: `OWNER${i}`,
+          now: Date.now(),
+          browserDayLock: { browserId: "BROWSERLOCK01", owner: `OWNER${i}` },
+        }),
+      ),
+    );
+    const reserved = results.filter((r) => r.status === "reserved");
+    expect(reserved.length).toBe(1);
+    expect(results.filter((r) => r.status === "browser_taken").length).toBe(19);
+    expect(Number(await client.send("GET", [`wooftag:day:${today}`]))).toBe(1);
+    expect(await client.send("GET", ["wooftag:queue"])).toBeNull();
+    const key = `wooftag:x:browser:BROWSERLOCK01:${today}`;
+    const owner = String(await client.send("GET", [key]));
+    const ttl = Number(await client.send("TTL", [key]));
+    expect(ttl).toBeGreaterThan(47 * 3600);
+    expect(ttl).toBeLessThanOrEqual(48 * 3600);
+
+    const again = await store.admitOrQueue({
+      utcDate: today,
+      token: owner,
+      newToken: owner,
+      now: Date.now(),
+      browserDayLock: { browserId: "BROWSERLOCK01", owner },
+    });
+    expect(again.status).toBe("browser_taken");
+    if (again.status === "browser_taken") expect(again.sameOwner).toBe(true);
+
+    await store.releaseBrowserDayLock("BROWSERLOCK01", today, "SOMEONEELSE");
+    expect(await client.send("GET", [key])).toBe(owner);
+    await store.releaseBrowserDayLock("BROWSERLOCK01", today, owner);
+    expect(await client.send("GET", [key])).toBeNull();
+  });
+
+  test("browser-day lock is not taken when the caller is only queued", async () => {
+    const today = utcDateKey();
+    await client.send("SET", [`wooftag:day:${today}`, String(WOOFTAG_DAILY_CAP)]);
+    const r = await store.admitOrQueue({
+      utcDate: today,
+      token: "QUEUEDOWNER1",
+      newToken: "QUEUEDOWNER1",
+      now: Date.now(),
+      browserDayLock: { browserId: "BROWSERLOCK02", owner: "QUEUEDOWNER1" },
+    });
+    expect(r.status).toBe("queued");
+    expect(await client.send("GET", [`wooftag:x:browser:BROWSERLOCK02:${today}`])).toBeNull();
+  });
+
   test("230 concurrent POST /api/wooftag/mint through the real client → cap holds", async () => {
     process.env.UPSTASH_REDIS_REST_URL = `http://127.0.0.1:${server.port}`;
     process.env.UPSTASH_REDIS_REST_TOKEN = "local-test";

@@ -428,6 +428,22 @@ export function WooftagMint() {
         setError(json.message || "Pass today’s woof checks first.");
         return;
       }
+      if (json.error === "browser_already_claimed_today") {
+        setError(
+          json.message ||
+            "This browser already claimed today’s Wooftag. Come back after 1 AM Lagos / midnight UTC.",
+        );
+        setPhase("x_offer");
+        return;
+      }
+      if (json.error === "browser_required") {
+        setError(
+          json.message ||
+            "Refresh this page and pass today’s woof checks in this browser, then claim.",
+        );
+        setPhase("x_offer");
+        return;
+      }
       if (json.error === "sign_in_required") {
         // Full-page navigation on purpose: /api/auth/x/start is a route handler
         // that redirects to X for OAuth — router.push() cannot follow that.

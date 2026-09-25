@@ -39,6 +39,11 @@ export default function PrivacyPage() {
             signing in. Access tokens from X are discarded after reading{" "}
             <code className="text-electric">/users/me</code>.
           </li>
+          <li>
+            Optional X claim, per browser: a short-lived (about 48 hours) marker that
+            this browser id claimed today&apos;s Wooftag, so each browser gets at most
+            one daily claim.
+          </li>
           <li>Standard hosting / analytics signals on Vercel (page views).</li>
         </ul>
       </section>

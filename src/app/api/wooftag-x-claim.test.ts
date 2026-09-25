@@ -62,10 +62,11 @@ function req(
   withSession = true,
   uid = X_UID,
   extraCookies: string[] = [],
+  browser: string | null = browserId,
 ) {
   ip += 1;
   const cookies = [
-    `qw_wooftag_browser=${browserId}`,
+    ...(browser === null ? [] : [`qw_wooftag_browser=${browser}`]),
     `qw_woof_gate=${Date.now() - 60_000}`,
   ];
   if (withSession) {
@@ -87,9 +88,11 @@ function req(
   });
 }
 
-async function passAllQuizzes() {
+async function passAllQuizzes(browser: string = browserId) {
   for (const topic of READY) {
-    const res = await checkPOST(req("/api/woof-school/check", { topic, answers: woofSchoolAnswers[topic] }));
+    const res = await checkPOST(
+      req("/api/woof-school/check", { topic, answers: woofSchoolAnswers[topic] }, true, X_UID, [], browser),
+    );
     const body = (await res.json()) as { passed: boolean };
     expect(body.passed).toBe(true);
   }
@@ -109,8 +112,9 @@ async function claim(
   uid = X_UID,
   body: unknown = {},
   extraCookies: string[] = [],
+  browser: string | null = browserId,
 ): Promise<{ status: number; body: ClaimJson & { position?: number; queueToken?: string } }> {
-  const res = await claimPOST(req("/api/wooftag/claim", body, withSession, uid, extraCookies));
+  const res = await claimPOST(req("/api/wooftag/claim", body, withSession, uid, extraCookies, browser));
   return { status: res.status, body: (await res.json()) as ClaimJson };
 }
 
@@ -195,23 +199,126 @@ describe("POST /api/wooftag/claim (flag on, in-memory, mocked X session)", () =>
     const { getWooftagStore } = await import("@/lib/wooftag-store");
     const store = getWooftagStore()!;
     for (let i = 0; i < 200; i++) await store.reserveDailySlot("2026-09-25");
-    await passAllQuizzes();
-    const head = await claim(true, "2222222222");
+    const headBrowser = newOpaqueId(16);
+    const jumperBrowser = newOpaqueId(16);
+    await passAllQuizzes(headBrowser);
+    const head = await claim(true, "2222222222", {}, [], headBrowser);
     expect(head.body.status).toBe("queued");
     expect(head.body.position).toBe(1);
 
     setSystemTime(new Date(DAY2));
-    await passAllQuizzes();
-    const jumper = await claim(true, "3333333333", { queueToken: "2222222222" }, [
-      "qw_wooftag_q=2222222222",
-    ]);
+    await passAllQuizzes(headBrowser);
+    await passAllQuizzes(jumperBrowser);
+    const jumper = await claim(
+      true,
+      "3333333333",
+      { queueToken: "2222222222" },
+      ["qw_wooftag_q=2222222222"],
+      jumperBrowser,
+    );
     expect(jumper.body.status).toBe("queued");
     expect(jumper.body.position).toBe(2);
     expect(jumper.body.queueToken).toBe("3333333333");
 
-    const headDay2 = await claim(true, "2222222222");
+    const headDay2 = await claim(true, "2222222222", {}, [], headBrowser);
     expect(headDay2.body.status).toBe("claimed");
-    const next = await claim(true, "3333333333");
+    const next = await claim(true, "3333333333", {}, [], jumperBrowser);
     expect(next.body.status).toBe("claimed");
+  });
+
+  describe("one successful claim per browser per UTC day", () => {
+    const A = "4444444444";
+    const B = "5555555555";
+
+    test("missing or malformed browser cookie → 400 browser_required", async () => {
+      const none = await claim(true, A, {}, [], null);
+      expect(none.status).toBe(400);
+      expect(none.body.error).toBe("browser_required");
+      const junk = await claim(true, A, {}, [], "not-a-valid-id!");
+      expect(junk.status).toBe(400);
+      expect(junk.body.error).toBe("browser_required");
+    });
+
+    test("two X accounts, same browser, same day → second is rejected (neutral copy)", async () => {
+      await passAllQuizzes();
+      const first = await claim(true, A);
+      expect(first.body.status).toBe("claimed");
+      const second = await claim(true, B);
+      expect(second.status).toBe(409);
+      expect(second.body.error).toBe("browser_already_claimed_today");
+      expect(second.body.tag).toBeUndefined();
+      const msg = (second.body as { message?: string }).message ?? "";
+      expect(msg).toContain("This browser already claimed today");
+      expect(msg).not.toContain(A);
+      expect(msg).not.toContain(`pup${A}`);
+      // The first account still re-opens its own tag on this browser.
+      const again = await claim(true, A);
+      expect(again.body.status).toBe("already_claimed");
+      expect(again.body.tag).toBe(first.body.tag);
+      // Only one slot was used today.
+      const { getWooftagStore } = await import("@/lib/wooftag-store");
+      expect((await getWooftagStore()!.getDay("2026-09-25")).minted).toBe(1);
+    });
+
+    test("two X accounts racing from one browser → exactly one succeeds", async () => {
+      await passAllQuizzes();
+      const results = await Promise.all(
+        Array.from({ length: 10 }, (_, i) => claim(true, i % 2 === 0 ? A : B)),
+      );
+      const claimed = results.filter((r) => r.body.status === "claimed");
+      expect(claimed.length).toBe(1);
+      const blocked = results.filter((r) => r.body.error === "browser_already_claimed_today");
+      const same = results.filter((r) => r.body.status === "already_claimed");
+      expect(claimed.length + blocked.length + same.length).toBe(10);
+      expect(blocked.length).toBeGreaterThan(0);
+      const { getWooftagStore } = await import("@/lib/wooftag-store");
+      expect((await getWooftagStore()!.getDay("2026-09-25")).minted).toBe(1);
+    });
+
+    test("next UTC day after re-passing quizzes → the other account is allowed", async () => {
+      await passAllQuizzes();
+      expect((await claim(true, A)).body.status).toBe("claimed");
+      expect((await claim(true, B)).body.error).toBe("browser_already_claimed_today");
+      setSystemTime(new Date(DAY2));
+      const stale = await claim(true, B);
+      expect(stale.body.error).toBe("school_incomplete");
+      await passAllQuizzes();
+      const day2 = await claim(true, B);
+      expect(day2.body.status).toBe("claimed");
+      expect(day2.body.utcDate).toBe("2026-09-26");
+    });
+
+    test("different browsers with different accounts → both allowed", async () => {
+      const other = newOpaqueId(16);
+      await passAllQuizzes();
+      await passAllQuizzes(other);
+      const [a, b] = await Promise.all([claim(true, A), claim(true, B, {}, [], other)]);
+      expect(a.body.status).toBe("claimed");
+      expect(b.body.status).toBe("claimed");
+      expect(a.body.tag).not.toBe(b.body.tag);
+    });
+
+    test("a failed claim releases the browser lock (retry can succeed)", async () => {
+      await passAllQuizzes();
+      const { getWooftagStore } = await import("@/lib/wooftag-store");
+      const store = getWooftagStore()!;
+      // Take the slot + lock as a claim would, then release it the way the route
+      // does when a later step (tag store / encrypt / bind) fails.
+      const r = await store.admitOrQueue({
+        utcDate: "2026-09-25",
+        token: A,
+        newToken: A,
+        now: Date.now(),
+        browserDayLock: { browserId, owner: A },
+      });
+      expect(r.status).toBe("reserved");
+      // Another owner cannot release it…
+      await store.releaseBrowserDayLock(browserId, "2026-09-25", B);
+      expect((await claim(true, B)).body.error).toBe("browser_already_claimed_today");
+      // …the holder can.
+      await store.releaseDailySlot("2026-09-25");
+      await store.releaseBrowserDayLock(browserId, "2026-09-25", A);
+      expect((await claim(true, B)).body.status).toBe("claimed");
+    });
   });
 });

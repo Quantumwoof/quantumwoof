@@ -23,6 +23,7 @@ import {
   gateTooFresh,
   json,
   queueCookie,
+  readBrowserId,
 } from "@/lib/wooftag-http";
 import { rejectForeignOrigin } from "@/lib/request-origin";
 
@@ -102,8 +103,22 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const browser = ensureBrowserId(req);
-  const pendingCookies = browser.cookie ? [browser.cookie] : [];
+  // Claims are bound to the durable browser cookie (the same id the Woof School
+  // stamps live under). Missing / malformed → reject; hand out a fresh id so the
+  // visitor can pass today's checks on this browser and try again.
+  const browserId = readBrowserId(req);
+  if (!browserId) {
+    const fresh = ensureBrowserId(req);
+    return json(
+      {
+        ok: false,
+        error: "browser_required",
+        message: WOOFTAG_X_MESSAGES.browserRequired,
+      },
+      { status: 400, cookies: fresh.cookie ? [fresh.cookie] : [] },
+    );
+  }
+  const browser = { id: browserId };
   const today = utcDateKey();
 
   const existing = await store.getXClaim(session.uid, today);
@@ -122,7 +137,6 @@ export async function POST(req: NextRequest) {
         note: WOOFTAG_X_MESSAGES.alreadyToday,
         message: WOOFTAG_X_MESSAGES.dailyHint,
       },
-      { cookies: pendingCookies },
     );
   }
 
@@ -133,7 +147,7 @@ export async function POST(req: NextRequest) {
         error: "too_fast",
         message: "Too speedy — pass today’s woof checks first, then claim.",
       },
-      { status: 400, cookies: pendingCookies },
+      { status: 400 },
     );
   }
 
@@ -149,7 +163,7 @@ export async function POST(req: NextRequest) {
         utcDate: today,
         message: WOOFTAG_X_MESSAGES.missingStamps,
       },
-      { status: 400, cookies: pendingCookies },
+      { status: 400 },
     );
   }
 
@@ -163,7 +177,39 @@ export async function POST(req: NextRequest) {
     newToken: session.uid,
     now,
     staleMs: STALE_QUEUE_MS,
+    // One successful claim per browser per UTC day, taken atomically with the slot.
+    browserDayLock: { browserId: browser.id, owner: session.uid },
   });
+
+  if (admission.status === "browser_taken") {
+    // Same X account racing itself from this browser → treat as its own claim.
+    if (admission.sameOwner) {
+      const mine = await store.getXClaim(session.uid, today);
+      const mineTag = mine ? decryptWooftag(mine.tagEnc) : null;
+      return json(
+        {
+          ok: true,
+          status: "already_claimed",
+          tag: mineTag || undefined,
+          utcDate: today,
+          remaining: admission.remaining,
+          claim: WOOFTAG_CLAIM_LATER,
+          note: WOOFTAG_X_MESSAGES.alreadyToday,
+          message: WOOFTAG_X_MESSAGES.dailyHint,
+        },
+      );
+    }
+    // Neutral copy — never reveal which account claimed on this browser.
+    return json(
+      {
+        ok: false,
+        error: "browser_already_claimed_today",
+        utcDate: today,
+        message: WOOFTAG_X_MESSAGES.browserAlreadyClaimedToday,
+      },
+      { status: 409 },
+    );
+  }
 
   if (admission.status === "queued") {
     return json(
@@ -178,9 +224,15 @@ export async function POST(req: NextRequest) {
         message: WOOFTAG_BOWL_FULL,
         claim: WOOFTAG_CLAIM_LATER,
       },
-      { cookies: [...pendingCookies, queueCookie(admission.token)] },
+      { cookies: [queueCookie(admission.token)] },
     );
   }
+
+  // Undo the reservation (slot + this browser's day lock) if the claim fails.
+  const releaseSlotAndBrowser = async () => {
+    await store.releaseDailySlot(today);
+    await store.releaseBrowserDayLock(browser.id, today, session.uid);
+  };
 
   let tag = "";
   let tagHash = "";
@@ -196,16 +248,16 @@ export async function POST(req: NextRequest) {
   }
 
   if (!stored || !tag || !tagHash) {
-    await store.releaseDailySlot(today);
+    await releaseSlotAndBrowser();
     return json(
       { ok: false, error: "issue_failed", message: "Hosky dropped the stamp. Try again." },
-      { status: 500, cookies: pendingCookies },
+      { status: 500 },
     );
   }
 
   const tagEnc = encryptWooftag(tag);
   if (!tagEnc) {
-    await store.releaseDailySlot(today);
+    await releaseSlotAndBrowser();
     console.error("[wooftag/claim] encrypt failed (session secret?)");
     return json(
       {
@@ -213,13 +265,13 @@ export async function POST(req: NextRequest) {
         error: "service_unavailable",
         message: "Wooftag bowl is napping — try again later.",
       },
-      { status: 503, cookies: pendingCookies },
+      { status: 503 },
     );
   }
 
   const raced = await store.getXClaim(session.uid, today);
   if (raced) {
-    await store.releaseDailySlot(today);
+    await releaseSlotAndBrowser();
     const existingTag = decryptWooftag(raced.tagEnc);
     return json(
       {
@@ -232,7 +284,6 @@ export async function POST(req: NextRequest) {
         note: WOOFTAG_X_MESSAGES.alreadyToday,
         message: WOOFTAG_X_MESSAGES.dailyHint,
       },
-      { cookies: pendingCookies },
     );
   }
 
@@ -246,7 +297,7 @@ export async function POST(req: NextRequest) {
     tagEnc,
   });
   if (!bound) {
-    await store.releaseDailySlot(today);
+    await releaseSlotAndBrowser();
     const again = await store.getXClaim(session.uid, today);
     const existingTag = again ? decryptWooftag(again.tagEnc) : null;
     return json(
@@ -260,7 +311,6 @@ export async function POST(req: NextRequest) {
         note: WOOFTAG_X_MESSAGES.alreadyToday,
         message: WOOFTAG_X_MESSAGES.dailyHint,
       },
-      { cookies: pendingCookies },
     );
   }
 
@@ -284,6 +334,5 @@ export async function POST(req: NextRequest) {
       note: WOOFTAG_TIP_COPY,
       message: WOOFTAG_X_MESSAGES.dailyHint,
     },
-    { cookies: pendingCookies },
   );
 }

@@ -19,6 +19,11 @@
  * and takes the daily slot in the same script, so concurrent requests can
  * never exceed the cap or share a queue position.
  *
+ * X claim browser-day lock: `wooftag:x:browser:<browserId>:<utcDate>` (SET NX,
+ * ~48h) — at most one successful X claim per browser per UTC day. It is taken
+ * inside the admission script, only when a slot is reserved, and released
+ * (compare-and-delete) if the claim fails afterwards.
+ *
  * Browser lock: `wooftag:browser:<id>` binds the durable `qw_wooftag_browser`
  * cookie id after a successful mint (one sniff per browser).
  *
@@ -82,11 +87,18 @@ export type AdmitOptions = {
   newToken: string;
   now: number;
   staleMs?: number;
+  /**
+   * X claims only: take the per-browser-per-UTC-day lock together with the
+   * slot. If another owner already holds it, nothing is reserved or queued.
+   */
+  browserDayLock?: { browserId: string; owner: string };
 };
 
 export type AdmitResult =
   | ({ status: "reserved" } & DayCounts)
-  | ({ status: "queued"; token: string; position: number } & DayCounts);
+  | ({ status: "queued"; token: string; position: number } & DayCounts)
+  /** browserDayLock is held for this UTC day (`sameOwner`: by the same X account). */
+  | ({ status: "browser_taken"; sameOwner: boolean } & DayCounts);
 
 const DAY_TTL_SEC = 60 * 60 * 24 * 4;
 const HASH_TTL_SEC = 60 * 60 * 24 * 400;
@@ -94,6 +106,8 @@ const BROWSER_TTL_SEC = 60 * 60 * 24 * 400;
 const STAMP_TTL_SEC = 60 * 60 * 24 * 400; // undated stamps (anonymous mint while flag off)
 /** Day-scoped stamps for X daily claims — ~48h so yesterday can linger briefly. */
 const DAY_STAMP_TTL_SEC = 60 * 60 * 48;
+/** Per-browser X claim lock for one UTC day — ~48h like the day stamps. */
+export const X_BROWSER_DAY_TTL_SEC = 60 * 60 * 48;
 const X_CLAIM_TTL_SEC = 60 * 60 * 24 * 400;
 const X_HISTORY_TTL_SEC = 60 * 60 * 24 * 400;
 const X_HISTORY_MAX = 60;
@@ -184,6 +198,8 @@ export type WooftagStore = {
    * never hands out the same position twice.
    */
   admitOrQueue(opts: AdmitOptions): Promise<AdmitResult>;
+  /** Release a browser-day lock taken by admitOrQueue, only if `owner` still holds it. */
+  releaseBrowserDayLock(browserId: string, utcDate: string, owner: string): Promise<void>;
   /** Record a passed woof-check stamp for this browser (undated Redis set — anonymous mint). */
   addSchoolStamp(browserId: string, topicSlug: string): Promise<void>;
   /** Undated topic slugs (anonymous mint while X claim flag is off). */
@@ -262,9 +278,14 @@ class RedisStore implements WooftagStore {
   }
 
   async admitOrQueue(opts: AdmitOptions): Promise<AdmitResult> {
+    const lock = opts.browserDayLock;
     const raw = await this.runScript(
       LUA_ADMIT_OR_QUEUE,
-      [QUEUE_KEY, `wooftag:day:${opts.utcDate}`],
+      [
+        QUEUE_KEY,
+        `wooftag:day:${opts.utcDate}`,
+        ...(lock ? [browserDayKey(lock.browserId, opts.utcDate)] : []),
+      ],
       [
         opts.token ?? "",
         opts.newToken,
@@ -272,6 +293,8 @@ class RedisStore implements WooftagStore {
         opts.staleMs ?? QUEUE_STALE_MS,
         WOOFTAG_DAILY_CAP,
         DAY_TTL_SEC,
+        lock?.owner ?? "",
+        X_BROWSER_DAY_TTL_SEC,
       ],
     );
     const r = Array.isArray(raw) ? raw : [];
@@ -284,6 +307,7 @@ class RedisStore implements WooftagStore {
       queueLength: Number(r[3] ?? 0) || 0,
     };
     if (r[0] === "reserved") return { status: "reserved", ...base };
+    if (r[0] === "browser_taken") return { status: "browser_taken", sameOwner: Number(r[1]) === 1, ...base };
     if (r[0] === "queued") {
       return {
         status: "queued",
@@ -294,6 +318,10 @@ class RedisStore implements WooftagStore {
       };
     }
     throw new Error("wooftag admit script returned an unexpected reply");
+  }
+
+  async releaseBrowserDayLock(browserId: string, utcDate: string, owner: string) {
+    await this.runScript(LUA_RELEASE_IF_OWNER, [browserDayKey(browserId, utcDate)], [owner]);
   }
 
   async putTagFingerprint(fp: WooftagFingerprint, mintedAt: string) {
@@ -434,6 +462,7 @@ class MemoryStore implements WooftagStore {
   private xHistory = new Map<string, XClaimHistoryItem[]>();
   private rl = new Map<string, { n: number; reset: number }>();
   private queue: QueueItem[] = [];
+  private browserDayLocks = new Map<string, { owner: string; exp: number }>();
 
   async rateLimit(key: string, limit: number, windowSec: number) {
     const now = Date.now();
@@ -475,9 +504,33 @@ class MemoryStore implements WooftagStore {
     // No awaits inside: the whole decision runs as one critical section,
     // mirroring the Redis Lua script.
     const minted = this.counts.get(opts.utcDate) ?? 0;
+    const lock = opts.browserDayLock;
+    const lockKey = lock ? browserDayKey(lock.browserId, opts.utcDate) : "";
+    if (lock) {
+      const held = this.browserDayLocks.get(lockKey);
+      if (held && held.exp > Date.now()) {
+        return {
+          status: "browser_taken",
+          sameOwner: held.owner === lock.owner,
+          utcDate: opts.utcDate,
+          minted,
+          remaining: Math.max(0, WOOFTAG_DAILY_CAP - minted),
+          cap: WOOFTAG_DAILY_CAP,
+          queueLength: this.queue.length,
+        };
+      }
+    }
     const decision = decideAdmission(this.queue, minted, opts);
     this.queue = decision.queue;
-    if (decision.status === "reserved") this.counts.set(opts.utcDate, minted + 1);
+    if (decision.status === "reserved") {
+      this.counts.set(opts.utcDate, minted + 1);
+      if (lock) {
+        this.browserDayLocks.set(lockKey, {
+          owner: lock.owner,
+          exp: Date.now() + X_BROWSER_DAY_TTL_SEC * 1000,
+        });
+      }
+    }
     const nowMinted = this.counts.get(opts.utcDate) ?? 0;
     const base: DayCounts = {
       utcDate: opts.utcDate,
@@ -488,6 +541,11 @@ class MemoryStore implements WooftagStore {
     };
     if (decision.status === "reserved") return { status: "reserved", ...base };
     return { status: "queued", token: decision.token, position: decision.position, ...base };
+  }
+
+  async releaseBrowserDayLock(browserId: string, utcDate: string, owner: string) {
+    const key = browserDayKey(browserId, utcDate);
+    if (this.browserDayLocks.get(key)?.owner === owner) this.browserDayLocks.delete(key);
   }
 
   async putTagFingerprint(fp: WooftagFingerprint, mintedAt: string) {
@@ -574,6 +632,10 @@ class MemoryStore implements WooftagStore {
 
 }
 
+function browserDayKey(browserId: string, utcDate: string): string {
+  return `wooftag:x:browser:${browserId}:${utcDate}`;
+}
+
 type AdmissionDecision =
   | { status: "reserved"; queue: QueueItem[] }
   | { status: "queued"; queue: QueueItem[]; token: string; position: number };
@@ -633,6 +695,12 @@ if redis.call('TTL', KEYS[1]) < 0 then redis.call('EXPIRE', KEYS[1], tonumber(AR
 return n
 `;
 
+/** KEYS[1]=lock · ARGV[1]=owner → delete only if still held by owner. */
+const LUA_RELEASE_IF_OWNER = `
+if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end
+return 0
+`;
+
 /** KEYS[1]=day counter → decrement, floored at 0. */
 const LUA_RELEASE_SLOT = `
 local n = tonumber(redis.call('GET', KEYS[1]) or '0') or 0
@@ -642,12 +710,23 @@ return 0
 
 /**
  * KEYS[1]=queue (JSON array of {id,t} — same format the app always stored),
- * KEYS[2]=day counter.
- * ARGV: token, newToken, now(ms), staleMs, cap, dayTtl.
- * Reply: {status, position, minted, queueLength, token}.
+ * KEYS[2]=day counter, optional KEYS[3]=X claim browser-day lock.
+ * ARGV: token, newToken, now(ms), staleMs, cap, dayTtl, lockOwner, lockTtl.
+ * Reply: {status, position, minted, queueLength, token}; for
+ * status 'browser_taken', position is 1 when the lock owner matches.
  */
 const LUA_ADMIT_OR_QUEUE = `
 local token = ARGV[1]
+local lockKey = KEYS[3]
+if lockKey then
+  local holder = redis.call('GET', lockKey)
+  if holder then
+    local m = tonumber(redis.call('GET', KEYS[2]) or '0') or 0
+    local same = 0
+    if holder == ARGV[7] then same = 1 end
+    return { 'browser_taken', same, m, 0, '' }
+  end
+end
 local now = tonumber(ARGV[3])
 local stale = tonumber(ARGV[4])
 local cap = tonumber(ARGV[5])
@@ -716,6 +795,9 @@ end
 if changed then save() end
 local n = redis.call('INCR', KEYS[2])
 if redis.call('TTL', KEYS[2]) < 0 then redis.call('EXPIRE', KEYS[2], tonumber(ARGV[6])) end
+if lockKey then
+  redis.call('SET', lockKey, ARGV[7], 'NX', 'EX', tonumber(ARGV[8]))
+end
 return { 'reserved', 0, n, #live, token }
 `;
 
