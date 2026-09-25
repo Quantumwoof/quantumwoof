@@ -67,7 +67,11 @@ export function WoofCheck({ topic, embedded = false, nextCourtyard = null }: Pro
       });
       const data = (await res.json()) as CheckRes;
       if (!data.ok) {
-        setError(data.message || "Could not check your woof.");
+        setError(
+          data.error === "forbidden_origin"
+            ? "Hmm, that check got blocked — refresh the page and try again."
+            : data.message || "Could not check your woof.",
+        );
         setChecking(false);
         return;
       }

@@ -9,7 +9,7 @@ import {
   isWooftagFormat,
   newOpaqueId,
 } from "@/lib/wooftag";
-import { getWooftagPepper, hashWooftag } from "@/lib/wooftag-hash";
+import { getWooftagPepper, wooftagFingerprint } from "@/lib/wooftag-hash";
 import { getWooftagStore, type QueueItem } from "@/lib/wooftag-store";
 import {
   WOOFTAG_X_MESSAGES,
@@ -26,6 +26,7 @@ import {
   queueCookie,
   readQueueToken,
 } from "@/lib/wooftag-http";
+import { rejectForeignOrigin } from "@/lib/request-origin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -43,6 +44,9 @@ type MintBody = {
 };
 
 export async function POST(req: NextRequest) {
+  const forbidden = rejectForeignOrigin(req);
+  if (forbidden) return forbidden;
+
   // When X daily claim is on, anonymous mint is off.
   if (isWooftagXClaimEnabled()) {
     return json(
@@ -254,8 +258,7 @@ export async function POST(req: NextRequest) {
   for (let i = 0; i < 8; i++) {
     tag = generateWooftag();
     if (!isWooftagFormat(tag)) continue;
-    const digest = hashWooftag(tag, pepper);
-    stored = await store.putHash(digest, mintedAt);
+    stored = await store.putTagFingerprint(wooftagFingerprint(tag, pepper), mintedAt);
     if (stored) break;
   }
 

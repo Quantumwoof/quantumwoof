@@ -11,7 +11,7 @@ import {
   isWooftagFormat,
   utcDateKey,
 } from "@/lib/wooftag";
-import { getWooftagPepper, hashWooftag } from "@/lib/wooftag-hash";
+import { getWooftagPepper, wooftagFingerprint } from "@/lib/wooftag-hash";
 import {
   WOOFTAG_X_MESSAGES,
   isWooftagXClaimEnabled,
@@ -25,6 +25,7 @@ import {
   queueCookie,
   readQueueToken,
 } from "@/lib/wooftag-http";
+import { rejectForeignOrigin } from "@/lib/request-origin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -43,6 +44,9 @@ type ClaimBody = { queueToken?: unknown };
  * One claim per X account per UTC day (SET NX). History keeps past daily tags.
  */
 export async function POST(req: NextRequest) {
+  const forbidden = rejectForeignOrigin(req);
+  if (forbidden) return forbidden;
+
   if (!isWooftagXClaimEnabled()) {
     return json(
       { ok: false, error: "disabled", message: WOOFTAG_X_MESSAGES.disabled },
@@ -240,8 +244,9 @@ export async function POST(req: NextRequest) {
   for (let i = 0; i < 8; i++) {
     tag = generateWooftag();
     if (!isWooftagFormat(tag)) continue;
-    tagHash = hashWooftag(tag, pepper);
-    stored = await store.putHash(tagHash, issuedAt);
+    const fp = wooftagFingerprint(tag, pepper);
+    tagHash = fp.hmac;
+    stored = await store.putTagFingerprint(fp, issuedAt);
     if (stored) break;
   }
 

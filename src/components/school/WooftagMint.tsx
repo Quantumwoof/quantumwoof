@@ -312,6 +312,12 @@ export function WooftagMint() {
           if (cancelled) return;
         }
 
+        if (minted.error === "forbidden_origin") {
+          setError("Hmm, that request got blocked — refresh the page and try again.");
+          setPhase("error");
+          return;
+        }
+
         if (minted.error === "sign_in_required") {
           setPhase("x_offer");
           return;
@@ -393,6 +399,11 @@ export function WooftagMint() {
         setSaved(rec);
         setPhase("idle");
         await refreshXSession();
+        return;
+      }
+      if (json.error === "forbidden_origin") {
+        setError("Hmm, that request got blocked — refresh the page and try again.");
+        setPhase("x_offer");
         return;
       }
       if (json.error === "school_incomplete") {

@@ -16,6 +16,10 @@
  * Browser lock: `wooftag:browser:<id>` binds the durable `qw_wooftag_browser`
  * cookie id after a successful mint (one sniff per browser).
  *
+ * Tag fingerprints: new tags → `wooftag:h2:<HMAC-SHA256 hex>`; legacy tags stay
+ * at `wooftag:h:<SHA-256(tag+pepper) hex>` (never rewritten). Lookups and
+ * dedupe check h2 first, then the legacy key.
+ *
  * School stamps: `wooftag:stamps:<browserId>` (Redis set of topic slugs) records
  * server-verified woof-check passes; mint requires stamps for all ready topics.
  *
@@ -24,6 +28,7 @@
 
 import { Redis } from "@upstash/redis";
 import { utcDateKey, WOOFTAG_DAILY_CAP } from "@/lib/wooftag";
+import type { WooftagFingerprint } from "@/lib/wooftag-hash";
 
 export type QueueItem = { id: string; t: number };
 
@@ -69,6 +74,10 @@ const X_CLAIM_TTL_SEC = 60 * 60 * 24 * 400;
 const X_HISTORY_TTL_SEC = 60 * 60 * 24 * 400;
 const X_HISTORY_MAX = 60;
 const QUEUE_KEY = "wooftag:queue";
+/** Current tag fingerprint keys (HMAC-SHA256). */
+export const HASH2_PREFIX = "wooftag:h2:";
+/** Legacy tag fingerprint keys (SHA-256(tag+pepper)) — read-only. */
+export const LEGACY_HASH_PREFIX = "wooftag:h:";
 
 function redisEnv(): { url: string; token: string } | null {
   const url =
@@ -128,7 +137,16 @@ export type WooftagStore = {
   /** Atomically take one of today's 200 slots (UTC day key; no rollover). */
   reserveDailySlot(utcDate?: string): Promise<{ reserved: boolean } & DayCounts>;
   releaseDailySlot(utcDate?: string): Promise<void>;
-  putHash(hash: string, mintedAt: string): Promise<boolean>;
+  /**
+   * Store a new tag fingerprint under the HMAC key (SET NX). Returns false if the
+   * tag already exists under either the HMAC key or the legacy SHA-256 key.
+   * Never writes the legacy key.
+   */
+  putTagFingerprint(fp: WooftagFingerprint, mintedAt: string): Promise<boolean>;
+  /** Look up a tag: HMAC key first, then legacy SHA-256 key. */
+  findTagFingerprint(
+    fp: WooftagFingerprint,
+  ): Promise<{ scheme: "hmac" | "legacy"; mintedAt: string } | null>;
   /** True if this browser id already minted (durable lock). */
   isBrowserBound(browserId: string): Promise<boolean>;
   /** Bind browser id after successful mint. Returns false if already bound. */
@@ -200,10 +218,22 @@ class RedisStore implements WooftagStore {
     if (n < 0) await this.redis.set(k, 0, { ex: DAY_TTL_SEC });
   }
 
-  async putHash(hash: string, mintedAt: string) {
-    const k = `wooftag:h:${hash}`;
-    const ok = await this.redis.set(k, mintedAt, { nx: true, ex: HASH_TTL_SEC });
+  async putTagFingerprint(fp: WooftagFingerprint, mintedAt: string) {
+    // Dedupe against legacy tags too (read-only; legacy keys are never touched).
+    if (await this.findTagFingerprint(fp)) return false;
+    const ok = await this.redis.set(`${HASH2_PREFIX}${fp.hmac}`, mintedAt, {
+      nx: true,
+      ex: HASH_TTL_SEC,
+    });
     return Boolean(ok);
+  }
+
+  async findTagFingerprint(fp: WooftagFingerprint) {
+    const v2 = await this.redis.get<string>(`${HASH2_PREFIX}${fp.hmac}`);
+    if (v2 != null && v2 !== "") return { scheme: "hmac" as const, mintedAt: String(v2) };
+    const v1 = await this.redis.get<string>(`${LEGACY_HASH_PREFIX}${fp.legacy}`);
+    if (v1 != null && v1 !== "") return { scheme: "legacy" as const, mintedAt: String(v1) };
+    return null;
   }
 
   async isBrowserBound(browserId: string) {
@@ -366,10 +396,23 @@ class MemoryStore implements WooftagStore {
     this.counts.set(utcDate, Math.max(0, n - 1));
   }
 
-  async putHash(hash: string, mintedAt: string) {
-    if (this.hashes.has(hash)) return false;
-    this.hashes.set(hash, mintedAt);
+  async putTagFingerprint(fp: WooftagFingerprint, mintedAt: string) {
+    if (await this.findTagFingerprint(fp)) return false;
+    this.hashes.set(`${HASH2_PREFIX}${fp.hmac}`, mintedAt);
     return true;
+  }
+
+  async findTagFingerprint(fp: WooftagFingerprint) {
+    const v2 = this.hashes.get(`${HASH2_PREFIX}${fp.hmac}`);
+    if (v2) return { scheme: "hmac" as const, mintedAt: v2 };
+    const v1 = this.hashes.get(`${LEGACY_HASH_PREFIX}${fp.legacy}`);
+    if (v1) return { scheme: "legacy" as const, mintedAt: v1 };
+    return null;
+  }
+
+  /** Test-only: plant a legacy `wooftag:h:<sha256>` entry. */
+  seedLegacyHash(legacyHex: string, mintedAt: string) {
+    this.hashes.set(`${LEGACY_HASH_PREFIX}${legacyHex}`, mintedAt);
   }
 
   async isBrowserBound(browserId: string) {
@@ -490,6 +533,12 @@ export function getWooftagStore(): WooftagStore | null {
     return memorySingleton;
   }
   return null;
+}
+
+/** Test-only: plant a legacy-hashed tag in the in-memory store. */
+export function seedLegacyHashForTests(legacyHex: string, mintedAt: string): void {
+  if (process.env.NODE_ENV === "production") return;
+  memorySingleton?.seedLegacyHash(legacyHex, mintedAt);
 }
 
 /** Dev/test only — wipe the in-memory store between cases. */

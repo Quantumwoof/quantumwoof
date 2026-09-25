@@ -4,6 +4,7 @@ import { gradeWoofCheck } from "@/content/woofSchool-answers";
 import { utcDateKey } from "@/lib/wooftag";
 import { getWooftagStore } from "@/lib/wooftag-store";
 import { clientIp, ensureBrowserId, json } from "@/lib/wooftag-http";
+import { rejectForeignOrigin } from "@/lib/request-origin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,6 +15,9 @@ type CheckBody = {
 };
 
 export async function POST(req: NextRequest) {
+  const forbidden = rejectForeignOrigin(req);
+  if (forbidden) return forbidden;
+
   const store = getWooftagStore();
   if (!store) {
     console.error("[woof-school/check] durable store unavailable");

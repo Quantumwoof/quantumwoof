@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { readSession } from "@/lib/auth-session";
 import { decryptWooftag } from "@/lib/wooftag-crypto";
+import { getWooftagPepper, wooftagMatchesHash } from "@/lib/wooftag-hash";
 import { utcDateKey } from "@/lib/wooftag";
 import { isWooftagXClaimEnabled } from "@/lib/wooftag-x";
 import { json } from "@/lib/wooftag-http";
@@ -26,15 +27,23 @@ export async function GET(req: NextRequest) {
   let todayIssuedAt: string | null = null;
   const history: { utcDate: string; issuedAt: string; tag: string }[] = [];
 
+  const pepper = getWooftagPepper();
+  // Only re-show a decrypted tag if it matches its stored fingerprint.
+  const verified = (enc: string, hash: string): string | null => {
+    const tag = decryptWooftag(enc);
+    if (!tag || !pepper) return null;
+    return wooftagMatchesHash(tag, pepper, hash) ? tag : null;
+  };
+
   if (store) {
     const todayClaim = await store.getXClaim(session.uid, today);
     if (todayClaim) {
       todayIssuedAt = todayClaim.issuedAt;
-      todayTag = decryptWooftag(todayClaim.tagEnc);
+      todayTag = verified(todayClaim.tagEnc, todayClaim.tagHash);
     }
     const hist = await store.listXClaimHistory(session.uid);
     for (const h of hist) {
-      const tag = decryptWooftag(h.tagEnc);
+      const tag = verified(h.tagEnc, h.tagHash);
       if (tag) history.push({ utcDate: h.utcDate, issuedAt: h.issuedAt, tag });
     }
   }
