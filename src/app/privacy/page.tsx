@@ -1,11 +1,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { pageMetadata } from "@/lib/page-metadata";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = pageMetadata({
   title: "Privacy · QuantumWoof",
   description:
     "How QuantumWoof handles Wooftag minting, optional X sign-in, and learning data.",
-};
+  path: "/privacy",
+});
 
 export default function PrivacyPage() {
   return (

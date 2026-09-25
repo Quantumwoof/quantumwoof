@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getNote, notes } from "@/content/notes";
+import { pageMetadata } from "@/lib/page-metadata";
 
 type Props = {
   params: Promise<{ slug: string }>;
@@ -14,10 +15,12 @@ export async function generateMetadata({ params }: Props) {
   const { slug } = await params;
   const note = getNote(slug);
   if (!note) return { title: "Note · Hosky" };
-  return {
+  return pageMetadata({
     title: `${note.title} · Hosky`,
     description: note.excerpt,
-  };
+    path: `/notes/${note.slug}`,
+    type: "article",
+  });
 }
 
 export default async function NotePage({ params }: Props) {

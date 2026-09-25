@@ -5,6 +5,7 @@ import { MarkVisited } from "@/components/school/MarkVisited";
 import { TopicSlides } from "@/components/school/TopicSlides";
 import { TopicStamp } from "@/components/school/TopicStamp";
 import { getTopic, schoolTopics } from "@/content/woofSchool";
+import { pageMetadata } from "@/lib/page-metadata";
 
 type Props = {
   params: Promise<{ topic: string }>;
@@ -18,10 +19,11 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { topic: slug } = await params;
   const topic = getTopic(slug);
   if (!topic) return { title: "Topic · Woof School" };
-  return {
+  return pageMetadata({
     title: `${topic.title} · Woof School`,
     description: topic.blurb,
-  };
+    path: `/school/${topic.slug}`,
+  });
 }
 
 export default async function SchoolTopicPage({ params }: Props) {

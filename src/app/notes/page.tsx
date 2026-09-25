@@ -1,10 +1,13 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { notes } from "@/content/notes";
+import { pageMetadata } from "@/lib/page-metadata";
 
-export const metadata = {
+export const metadata: Metadata = pageMetadata({
   title: "Notes · Hosky",
   description: "Short notes from Hosky’s digital garden.",
-};
+  path: "/notes",
+});
 
 export default function NotesPage() {
   return (

@@ -1,4 +1,5 @@
 import dynamic from "next/dynamic";
+import { homeMetadata } from "@/lib/page-metadata";
 import { AboutCard } from "@/components/AboutCard";
 import { BentoCard } from "@/components/BentoCard";
 import { HomeCampusTeaser } from "@/components/HomeCampusTeaser";
@@ -10,6 +11,8 @@ const Socials = dynamic(
   () => import("@/components/Socials").then((m) => m.Socials),
   { ssr: true },
 );
+
+export const metadata = homeMetadata;
 
 export default function Home() {
   return (

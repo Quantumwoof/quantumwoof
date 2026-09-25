@@ -3,11 +3,13 @@ import Link from "next/link";
 import { PlayCountryGate } from "@/components/PlayCountryGate";
 import { ConstellationConnect } from "@/components/games/ConstellationConnect";
 import { FetchPhoton } from "@/components/games/FetchPhoton";
+import { pageMetadata } from "@/lib/page-metadata";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = pageMetadata({
   title: "Woof games · Hosky",
   description: "Optional chill games from Hosky’s QuantumWoof garden.",
-};
+  path: "/play",
+});
 
 export default function PlayPage() {
   return (

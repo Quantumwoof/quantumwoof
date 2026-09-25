@@ -6,12 +6,14 @@ import { GuidedPathway } from "@/components/school/GuidedPathway";
 import { SnifferCertificate } from "@/components/school/SnifferCertificate";
 import { TopicStamp } from "@/components/school/TopicStamp";
 import { schoolTopics, suggestedOrder } from "@/content/woofSchool";
+import { pageMetadata } from "@/lib/page-metadata";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = pageMetadata({
   title: "Woof School · Hosky",
   description:
     "Open campus astronomy with Hosky — micro-lessons, tiny woof checks, Certified Nebula Sniffer.",
-};
+  path: "/school",
+});
 
 export default function SchoolCampusPage() {
   const bySlug = Object.fromEntries(schoolTopics.map((t) => [t.slug, t]));
