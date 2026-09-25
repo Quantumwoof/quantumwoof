@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { useCallback, useSyncExternalStore } from "react";
+import { useHydrated } from "@/hooks/useHydrated";
 import {
   COUNTRY_STORAGE_KEY,
   getCountryByCode,
@@ -41,11 +42,7 @@ function notifyCountryChange() {
  */
 export function useCountry() {
   const code = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
-  const [hydrated, setHydrated] = useState(false);
-
-  useEffect(() => {
-    setHydrated(true);
-  }, []);
+  const hydrated = useHydrated();
 
   const setCountry = useCallback((next: string) => {
     writeStoredCountryCode(next);

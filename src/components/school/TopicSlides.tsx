@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type { SchoolTopic } from "@/content/woofSchool";
 import { nextLiveTopic } from "@/content/woofSchool";
 import { useGuidedPath } from "@/hooks/useGuidedPath";
@@ -21,8 +21,10 @@ export function TopicSlides({ topic }: Props) {
   const [step, setStep] = useState(0);
   const [restored, setRestored] = useState(false);
 
-  useEffect(() => {
-    if (!pathReady || restored) return;
+  // Restore the guided-stroll cursor once the saved path is loaded
+  // (render-phase update, no extra commit).
+  if (pathReady && !restored) {
+    setRestored(true);
     if (
       isGuided &&
       path.topicSlug === topic.slug &&
@@ -34,17 +36,7 @@ export function TopicSlides({ topic }: Props) {
       // Entering a new courtyard on the guided path — park the cursor here at lesson 1.
       setGuidedCursor(topic.slug, 0);
     }
-    setRestored(true);
-  }, [
-    pathReady,
-    restored,
-    isGuided,
-    path.topicSlug,
-    path.stepIndex,
-    topic.slug,
-    totalSteps,
-    setGuidedCursor,
-  ]);
+  }
 
   const go = useCallback(
     (next: number) => {

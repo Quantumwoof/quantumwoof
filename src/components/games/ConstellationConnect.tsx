@@ -121,7 +121,7 @@ export function ConstellationConnect() {
     return buildTonightSkySession(code, hemisphere);
   }, [hydrated, code, hemisphere]);
 
-  const puzzles = session?.puzzles ?? [];
+  const puzzles = useMemo(() => session?.puzzles ?? [], [session]);
   const [screen, setScreen] = useState<Screen>("pick");
   const [puzzleIndex, setPuzzleIndex] = useState(0);
   const [nextId, setNextId] = useState(1);
@@ -199,25 +199,27 @@ export function ConstellationConnect() {
     startTonight();
   }, [startTonight]);
 
-  // Reset when country / session changes
+  // Reset when country / session changes (render-phase update, no extra commit).
+  const [boardSession, setBoardSession] = useState<typeof session>(null);
+  if (session !== boardSession) {
+    setBoardSession(session);
+    if (session) {
+      setScreen("pick");
+      setPuzzleIndex(0);
+      resetBoardState("Tonight’s few are ready — Start when you are.");
+    }
+  }
   useEffect(() => {
-    if (!session) return;
-    clearAdvanceTimer();
-    setScreen("pick");
-    setPuzzleIndex(0);
-    resetBoardState("Tonight’s few are ready — Start when you are.");
-  }, [session, clearAdvanceTimer, resetBoardState]);
+    if (session) clearAdvanceTimer();
+  }, [session, clearAdvanceTimer]);
+
+  // Finale morph level. Outside the finale it is always 0 (every way out of the
+  // finale goes through resetBoardState); reduced motion shows the settled picture.
+  const morphLevel = screen === "finale" && reducedMotion ? 1 : morph;
 
   // Finale morph: ease into combined night-sky picture
   useEffect(() => {
-    if (screen !== "finale") {
-      if (phase !== "done") setMorph(0);
-      return;
-    }
-    if (reducedMotion) {
-      setMorph(1);
-      return;
-    }
+    if (screen !== "finale" || reducedMotion) return;
     const duration = 1600;
     const start = performance.now();
     let raf = 0;
@@ -453,9 +455,9 @@ export function ConstellationConnect() {
   /* ─── Finale: all tonight’s shapes on one night canvas ─── */
   if (screen === "finale") {
     const slots = finaleSlots(puzzles.length);
-    const fieldOpacity = 0.2 + morph * 0.55;
-    const bgNight = 0.45 + morph * 0.5;
-    const glowBoost = 0.14 + morph * 0.28;
+    const fieldOpacity = 0.2 + morphLevel * 0.55;
+    const bgNight = 0.45 + morphLevel * 0.5;
+    const glowBoost = 0.14 + morphLevel * 0.28;
 
     // Shared decorative field from first puzzle + a few extras
     const field = [
@@ -490,7 +492,7 @@ export function ConstellationConnect() {
             <defs>
               <radialGradient id={`${gid}-fg-glow`} cx="50%" cy="40%" r="65%">
                 <stop offset="0%" stopColor={`rgba(62,207,255,${glowBoost})`} />
-                <stop offset="55%" stopColor={`rgba(88,80,180,${morph * 0.14})`} />
+                <stop offset="55%" stopColor={`rgba(88,80,180,${morphLevel * 0.14})`} />
                 <stop offset="100%" stopColor="rgba(2,6,23,0)" />
               </radialGradient>
               <radialGradient id={`${gid}-fg-night`} cx="50%" cy="100%" r="80%">
@@ -498,7 +500,7 @@ export function ConstellationConnect() {
                 <stop offset="100%" stopColor="rgba(2,6,23,0)" />
               </radialGradient>
               <filter id={`${gid}-fg-soft`} x="-50%" y="-50%" width="200%" height="200%">
-                <feGaussianBlur stdDeviation={0.35 + morph * 0.55} result="blur" />
+                <feGaussianBlur stdDeviation={0.35 + morphLevel * 0.55} result="blur" />
                 <feMerge>
                   <feMergeNode in="blur" />
                   <feMergeNode in="SourceGraphic" />
@@ -512,8 +514,8 @@ export function ConstellationConnect() {
               cx="50"
               cy="108"
               rx="70"
-              ry={14 + morph * 6}
-              fill={`rgba(15,23,42,${0.25 + morph * 0.4})`}
+              ry={14 + morphLevel * 6}
+              fill={`rgba(15,23,42,${0.25 + morphLevel * 0.4})`}
             />
 
             {field.map((f, i) => (
@@ -521,16 +523,16 @@ export function ConstellationConnect() {
                 key={`ff-${i}`}
                 cx={f.x}
                 cy={f.y}
-                r={f.r * (0.75 + morph * 0.55)}
+                r={f.r * (0.75 + morphLevel * 0.55)}
                 fill={`rgba(248,250,252,${fieldOpacity * (0.45 + (i % 3) * 0.15)})`}
-                className={morph > 0.2 && !reducedMotion ? "animate-twinkle" : undefined}
+                className={morphLevel > 0.2 && !reducedMotion ? "animate-twinkle" : undefined}
                 style={{ animationDelay: `${(i % 9) * 0.28}s` }}
               />
             ))}
 
             {puzzles.map((pz, i) => {
               const slot = slots[i] ?? slots[slots.length - 1]!;
-              const reveal = Math.max(0, Math.min(1, (morph - i * 0.08) / 0.55));
+              const reveal = Math.max(0, Math.min(1, (morphLevel - i * 0.08) / 0.55));
               const pts = pz.stars.map((s) => {
                 const m = mapStar(slot, s);
                 return `${m.x},${m.y}`;
@@ -590,7 +592,7 @@ export function ConstellationConnect() {
               );
             })}
 
-            <g opacity={0.4 + morph * 0.55}>
+            <g opacity={0.4 + morphLevel * 0.55}>
               <text
                 x="50"
                 y="96"

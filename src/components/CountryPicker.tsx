@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { COUNTRIES, DEFAULT_COUNTRY_CODE } from "@/lib/country";
 import { useCountry } from "@/hooks/useCountry";
 
@@ -27,10 +27,12 @@ export function CountryPicker({
   /** Draft for modal only — not treated as the user’s country until Save. */
   const [draft, setDraft] = useState(code ?? "");
   const [dismissed, setDismissed] = useState(false);
-
-  useEffect(() => {
+  // Follow the stored country into the draft whenever it changes.
+  const [draftSource, setDraftSource] = useState(code);
+  if (code !== draftSource) {
+    setDraftSource(code);
     if (code) setDraft(code);
-  }, [code]);
+  }
 
   const showModal =
     variant === "modal" &&

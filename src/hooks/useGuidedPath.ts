@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
+import { useHydrated } from "@/hooks/useHydrated";
 import { liveGuidedOrder } from "@/content/woofSchool";
 
 const STORAGE_KEY = "quantumwoof.woof-school.pathway.v1";
@@ -51,11 +52,13 @@ function writePath(next: GuidedPathState) {
 export function useGuidedPath() {
   const [path, setPath] = useState<GuidedPathState>(empty);
   const [ready, setReady] = useState(false);
+  const hydrated = useHydrated();
 
-  useEffect(() => {
-    setPath(readPath());
+  // Load the saved stroll once on the client (render-phase update, no extra commit).
+  if (hydrated && !ready) {
     setReady(true);
-  }, []);
+    setPath(readPath());
+  }
 
   const persist = useCallback((next: GuidedPathState) => {
     setPath(next);

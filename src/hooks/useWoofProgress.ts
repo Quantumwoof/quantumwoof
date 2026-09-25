@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
+import { useHydrated } from "@/hooks/useHydrated";
 import { SNIFFER_THRESHOLD, schoolTopics } from "@/content/woofSchool";
 
 const STORAGE_KEY = "quantumwoof.woof-school.v1";
@@ -54,21 +55,27 @@ export function useWoofProgress() {
   const [progress, setProgress] = useState<WoofProgress>(empty);
   const [ready, setReady] = useState(false);
   const [startedAt, setStartedAt] = useState<number | null>(null);
+  const hydrated = useHydrated();
 
-  useEffect(() => {
+  // Load saved progress once on the client (render-phase update, no extra commit).
+  if (hydrated && !ready) {
+    setReady(true);
     setProgress(readProgress());
     setStartedAt(readStartedAt());
-    setReady(true);
-  }, []);
+  }
 
   const persist = useCallback((next: WoofProgress) => {
     setProgress(next);
     writeProgress(next);
   }, []);
 
+  // Mutations start from localStorage (the source of truth), not this hook's
+  // state: a child effect can run before this instance has loaded (e.g.
+  // MarkVisited during hydration), and must not clobber saved progress.
   const markVisited = useCallback(
     (slug: string) => {
-      setProgress((prev) => {
+      setProgress(() => {
+        const prev = readProgress();
         if (prev.visited.includes(slug)) return prev;
         const next = { ...prev, visited: [...prev.visited, slug] };
         writeProgress(next);
@@ -79,7 +86,8 @@ export function useWoofProgress() {
   );
 
   const markWoofed = useCallback((slug: string) => {
-    setProgress((prev) => {
+    setProgress(() => {
+      const prev = readProgress();
       const visited = prev.visited.includes(slug)
         ? prev.visited
         : [...prev.visited, slug];

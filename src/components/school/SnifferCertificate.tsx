@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useWoofProgress } from "@/hooks/useWoofProgress";
 import { CertShareCard } from "@/components/school/CertShareCard";
 import { WooftagMint } from "@/components/school/WooftagMint";
@@ -26,9 +26,12 @@ export function SnifferCertificate() {
   const { ready, isSniffer, woofedCount, totalTopics } = useWoofProgress();
   const [name, setName] = useState("");
   const [dateLabel, setDateLabel] = useState("");
+  const [loaded, setLoaded] = useState(false);
 
-  useEffect(() => {
-    if (!ready || !isSniffer) return;
+  // Load the saved name / first-sniffer date once the cert unlocks
+  // (render-phase update, no extra commit).
+  if (ready && isSniffer && !loaded) {
+    setLoaded(true);
     try {
       const storedName = window.localStorage.getItem(NAME_KEY) ?? "";
       setName(storedName);
@@ -41,7 +44,7 @@ export function SnifferCertificate() {
     } catch {
       setDateLabel(todayLabel());
     }
-  }, [ready, isSniffer]);
+  }
 
   if (!ready || !isSniffer) return null;
 

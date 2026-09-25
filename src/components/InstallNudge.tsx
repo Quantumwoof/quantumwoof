@@ -1,32 +1,47 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useHydrated } from "@/hooks/useHydrated";
 
 const KEY = "quantumwoof.install-nudge.dismissed.v1";
 
 /**
  * Quiet, once-only “Add to Home Screen” tip — not a nag sheet.
  */
-export function InstallNudge() {
-  const [visible, setVisible] = useState(false);
+function isStandalone(): boolean {
+  return (
+    window.matchMedia("(display-mode: standalone)").matches ||
+    ("standalone" in navigator &&
+      Boolean((navigator as Navigator & { standalone?: boolean }).standalone))
+  );
+}
 
-  useEffect(() => {
+export function InstallNudge() {
+  const hydrated = useHydrated();
+  const [visible, setVisible] = useState(false);
+  const [checked, setChecked] = useState(false);
+
+  // Decide once on the client (render-phase update, no extra commit).
+  if (hydrated && !checked) {
+    setChecked(true);
     try {
-      if (window.localStorage.getItem(KEY) === "1") return;
-      // Skip if already running as installed PWA
-      const standalone =
-        window.matchMedia("(display-mode: standalone)").matches ||
-        ("standalone" in navigator &&
-          Boolean((navigator as Navigator & { standalone?: boolean }).standalone));
-      if (standalone) {
-        window.localStorage.setItem(KEY, "1");
-        return;
-      }
-      setVisible(true);
+      if (window.localStorage.getItem(KEY) !== "1" && !isStandalone()) setVisible(true);
     } catch {
       /* ignore */
     }
-  }, []);
+  }
+
+  // Already running as an installed PWA → remember so the tip never shows.
+  useEffect(() => {
+    if (!hydrated) return;
+    try {
+      if (window.localStorage.getItem(KEY) !== "1" && isStandalone()) {
+        window.localStorage.setItem(KEY, "1");
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [hydrated]);
 
   const dismiss = () => {
     try {

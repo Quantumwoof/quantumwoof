@@ -8,6 +8,7 @@ import {
   type KeyboardEvent,
 } from "react";
 import { photonTips } from "@/content/games";
+import { useHydrated } from "@/hooks/useHydrated";
 
 type Phase = "idle" | "countdown" | "running" | "ended";
 
@@ -35,14 +36,19 @@ export function FetchPhoton({ compact = false }: { compact?: boolean } = {}) {
   const startRef = useRef(0);
   const velocity = useRef({ vx: 0.08, vy: -0.06 });
 
-  useEffect(() => {
+  const hydrated = useHydrated();
+  const [bestLoaded, setBestLoaded] = useState(false);
+
+  // Load the saved best once on the client (render-phase update, no extra commit).
+  if (hydrated && !bestLoaded) {
+    setBestLoaded(true);
     try {
       const stored = localStorage.getItem("qw-photon-best");
       if (stored) setBest(Number(stored) || 0);
     } catch {
       /* ignore */
     }
-  }, []);
+  }
 
   const placePhoton = useCallback(() => {
     const el = arenaRef.current;
@@ -78,7 +84,8 @@ export function FetchPhoton({ compact = false }: { compact?: boolean } = {}) {
   }, []);
 
   const tick = useCallback(
-    (now: number) => {
+    // Named so the frame loop can reschedule itself.
+    function loop(now: number) {
       const elapsed = now - startRef.current;
       const remaining = Math.max(0, ROUND_MS - elapsed);
       setTimeLeft(remaining);
@@ -111,7 +118,7 @@ export function FetchPhoton({ compact = false }: { compact?: boolean } = {}) {
         endRound();
         return;
       }
-      rafRef.current = requestAnimationFrame(tick);
+      rafRef.current = requestAnimationFrame(loop);
     },
     [endRound],
   );
@@ -131,16 +138,18 @@ export function FetchPhoton({ compact = false }: { compact?: boolean } = {}) {
     setCountdown(3);
   }
 
+  // 3 · 2 · 1 — each beat 700ms; the last beat launches the round.
   useEffect(() => {
-    if (phase !== "countdown") return;
-    if (countdown <= 0) {
-      placePhoton();
-      setPhase("running");
-      startRef.current = performance.now();
-      rafRef.current = requestAnimationFrame(tick);
-      return;
-    }
-    const t = window.setTimeout(() => setCountdown((c) => c - 1), 700);
+    if (phase !== "countdown" || countdown <= 0) return;
+    const t = window.setTimeout(() => {
+      setCountdown(countdown - 1);
+      if (countdown - 1 <= 0) {
+        placePhoton();
+        setPhase("running");
+        startRef.current = performance.now();
+        rafRef.current = requestAnimationFrame(tick);
+      }
+    }, 700);
     return () => window.clearTimeout(t);
   }, [phase, countdown, placePhoton, tick]);
 

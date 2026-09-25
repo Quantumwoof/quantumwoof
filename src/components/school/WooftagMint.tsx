@@ -133,9 +133,14 @@ export function WooftagMint() {
     { utcDate: string; issuedAt: string; tag: string }[]
   >([]);
   const startedRef = useRef(false);
+  const [loaded, setLoaded] = useState(false);
+  /** `x_auth` result from the OAuth callback redirect, read once. */
+  const [xAuth, setXAuth] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!ready) return;
+  // Load saved tag / cert meta / queue token once progress is ready
+  // (render-phase update, no extra commit).
+  if (ready && !loaded) {
+    setLoaded(true);
     const existing = readSaved();
     if (existing) setSaved(existing);
     setMeta(readSnifferMeta());
@@ -146,7 +151,38 @@ export function WooftagMint() {
     } catch {
       /* ignore */
     }
-  }, [ready]);
+
+    // Back from X sign-in: show the result (side effects run in the effect below).
+    try {
+      const u = new URL(window.location.href);
+      const auth = u.searchParams.get("x_auth");
+      if (auth) {
+        setXAuth(auth);
+        if (auth === "ok") {
+          setSkipped(false);
+          setPhase("x_offer");
+        } else if (auth === "ineligible") {
+          const reason = u.searchParams.get("reason") ?? "";
+          setError(
+            reason === "too_new"
+              ? "This X account is too new for a Wooftag tip."
+              : reason === "inactive"
+                ? "This X account looks too quiet for a tip just yet."
+                : "This X account isn’t eligible for a Wooftag tip right now.",
+          );
+          setPhase("x_offer");
+        } else if (auth === "state") {
+          setError("Sign-in didn’t line up — please try Claim with X again.");
+          setPhase("x_offer");
+        } else if (auth !== "disabled") {
+          setError("Sign-in didn’t finish — you can try again or keep learning.");
+          setPhase("x_offer");
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+  }
 
   const copyTag = useCallback(async (tag: string) => {
     try {
@@ -180,32 +216,12 @@ export function WooftagMint() {
   }, []);
 
   useEffect(() => {
-    if (!ready) return;
+    if (!xAuth) return;
+    // False positive: refreshXSession only sets state after awaiting fetch().
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (xAuth === "ok") void refreshXSession();
     try {
       const u = new URL(window.location.href);
-      const auth = u.searchParams.get("x_auth");
-      if (!auth) return;
-      if (auth === "ok") {
-        setSkipped(false);
-        setPhase("x_offer");
-        void refreshXSession();
-      } else if (auth === "ineligible") {
-        const reason = u.searchParams.get("reason") ?? "";
-        setError(
-          reason === "too_new"
-            ? "This X account is too new for a Wooftag tip."
-            : reason === "inactive"
-              ? "This X account looks too quiet for a tip just yet."
-              : "This X account isn’t eligible for a Wooftag tip right now.",
-        );
-        setPhase("x_offer");
-      } else if (auth === "state") {
-        setError("Sign-in didn’t line up — please try Claim with X again.");
-        setPhase("x_offer");
-      } else if (auth !== "disabled") {
-        setError("Sign-in didn’t finish — you can try again or keep learning.");
-        setPhase("x_offer");
-      }
       u.searchParams.delete("x_auth");
       u.searchParams.delete("reason");
       u.searchParams.delete("u");
@@ -213,17 +229,14 @@ export function WooftagMint() {
     } catch {
       /* ignore */
     }
-  }, [ready, refreshXSession]);
-
-
+  }, [xAuth, refreshXSession]);
 
   useEffect(() => {
     if (!ready || !isSniffer || startedRef.current) return;
     startedRef.current = true;
 
-    const existing = readSaved();
-    if (existing) {
-      setSaved(existing);
+    // A saved tag was already loaded into state above — just refresh X info.
+    if (readSaved()) {
       void fetch("/api/wooftag/status")
         .then((r) => r.json())
         .then((s: StatusRes) => {
@@ -237,9 +250,9 @@ export function WooftagMint() {
     }
 
     let cancelled = false;
-    setPhase("waiting");
 
     (async () => {
+      setPhase("waiting");
       try {
         const statusRes = await fetch("/api/wooftag/status");
         const statusJson = (await statusRes.json()) as StatusRes;
@@ -376,6 +389,9 @@ export function WooftagMint() {
 
     return () => {
       cancelled = true;
+      // Let a re-run (Strict Mode remount, dependency change) start over instead
+      // of leaving the cancelled flow stuck on "waiting".
+      startedRef.current = false;
     };
   }, [ready, isSniffer, progress.woofed, startedAt, refreshXSession]);
 
@@ -413,6 +429,9 @@ export function WooftagMint() {
         return;
       }
       if (json.error === "sign_in_required") {
+        // Full-page navigation on purpose: /api/auth/x/start is a route handler
+        // that redirects to X for OAuth — router.push() cannot follow that.
+        // eslint-disable-next-line @next/next/no-location-assign-relative-destination
         window.location.href = "/api/auth/x/start";
         return;
       }
