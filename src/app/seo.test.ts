@@ -45,7 +45,8 @@ describe("SEO routes", () => {
     const home = pageMetadata({ title: "Hosky · QuantumWoof", description: "d", path: "/" });
     expect((home.openGraph as { images: { alt: string }[] }).images[0].alt).toBe("Hosky · QuantumWoof");
     expect(notFoundMetadata.title).toBe("Lost in space · QuantumWoof");
-    expect((notFoundMetadata.robots as { index: boolean }).index).toBe(false);
+    // noindex comes from Next's not-found handling; we must not add a second tag.
+    expect(notFoundMetadata.robots).toBeUndefined();
   });
 
   test("pageMetadata gives each page its own canonical, OG text/url and the share image", () => {

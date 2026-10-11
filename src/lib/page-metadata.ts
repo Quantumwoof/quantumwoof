@@ -58,7 +58,8 @@ export function pageMetadata({
 export const notFoundMetadata: Metadata = {
   title: "Lost in space · QuantumWoof",
   description: "This trail went quiet — pick a lit path back to the garden.",
-  robots: { index: false, follow: false },
+  // No `robots` here: Next injects `<meta name="robots" content="noindex">` itself
+  // for not-found pages (and a second tag would be a duplicate).
   openGraph: {
     title: "Lost in space · QuantumWoof",
     description: "This trail went quiet — pick a lit path back to the garden.",
