@@ -9,8 +9,10 @@ export function Header() {
         <Image
           src="/hosky-mark.png"
           alt="Hosky mark"
+          // The mark is a 784×1168 portrait; width/height carry its real aspect
+          // ratio so the header is reserved at full height before the image loads.
           width={44}
-          height={44}
+          height={66}
           className="rounded-full ring-1 ring-white/15 transition group-hover:ring-electric/40"
           priority
         />

@@ -1,4 +1,8 @@
+import type { Metadata } from "next";
 import Link from "next/link";
+import { notFoundMetadata } from "@/lib/page-metadata";
+
+export const metadata: Metadata = notFoundMetadata;
 
 export default function NotFound() {
   return (

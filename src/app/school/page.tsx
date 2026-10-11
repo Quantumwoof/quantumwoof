@@ -108,7 +108,7 @@ export default function SchoolCampusPage() {
           src="/hosky-mark.png"
           alt=""
           width={40}
-          height={40}
+          height={60}
           className="rounded-full"
         />
         <p className="text-sm text-slate">

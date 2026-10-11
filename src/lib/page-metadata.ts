@@ -12,6 +12,11 @@ export const OG_IMAGE = {
   type: "image/jpeg",
 } as const;
 
+/** Share-image alt text that names the page it represents. */
+function ogAlt(title: string) {
+  return title === site.title ? OG_IMAGE.alt : `${title} — ${OG_IMAGE.alt}`;
+}
+
 /**
  * Per-page metadata: canonical (www, via metadataBase) plus Open Graph /
  * Twitter tags that carry this page's own title, description and URL.
@@ -39,16 +44,32 @@ export function pageMetadata({
       url: path,
       siteName: "Quantumwoof",
       type,
-      images: [OG_IMAGE],
+      images: [{ ...OG_IMAGE, alt: ogAlt(title) }],
     },
     twitter: {
       card: "summary_large_image",
       title,
       description,
-      images: [OG_IMAGE.url],
+      images: [{ url: OG_IMAGE.url, alt: ogAlt(title) }],
     },
   };
 }
+
+export const notFoundMetadata: Metadata = {
+  title: "Lost in space · QuantumWoof",
+  description: "This trail went quiet — pick a lit path back to the garden.",
+  robots: { index: false, follow: false },
+  openGraph: {
+    title: "Lost in space · QuantumWoof",
+    description: "This trail went quiet — pick a lit path back to the garden.",
+    images: [{ ...OG_IMAGE, alt: ogAlt("Lost in space · QuantumWoof") }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Lost in space · QuantumWoof",
+    images: [{ url: OG_IMAGE.url, alt: ogAlt("Lost in space · QuantumWoof") }],
+  },
+};
 
 export const homeMetadata = pageMetadata({
   title: site.title,

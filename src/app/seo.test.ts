@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import robots from "./robots";
 import sitemap from "./sitemap";
-import { pageMetadata } from "@/lib/page-metadata";
+import { notFoundMetadata, pageMetadata } from "@/lib/page-metadata";
 import { notes } from "@/content/notes";
 import { schoolTopics } from "@/content/woofSchool";
 
@@ -26,6 +26,26 @@ describe("SEO routes", () => {
     }
     for (const n of notes) expect(urls).toContain(`https://www.quantumwoof.io/notes/${n.slug}`);
     expect(new Set(urls).size).toBe(urls.length);
+  });
+
+  test("every sitemap entry has a valid lastmod; notes use their own date", () => {
+    for (const e of sitemap()) {
+      expect(e.lastModified).toBeDefined();
+      expect(Number.isNaN(new Date(e.lastModified as string | Date).getTime())).toBe(false);
+    }
+    const note = notes[0]!;
+    const entry = sitemap().find((e) => e.url.endsWith(`/notes/${note.slug}`))!;
+    expect(entry.lastModified).toBe(note.date);
+  });
+
+  test("share image alt is page-specific; 404 has its own title and noindex", () => {
+    const m = pageMetadata({ title: "Woof School · Hosky", description: "d", path: "/school" });
+    const og = m.openGraph as { images: { alt: string }[] };
+    expect(og.images[0].alt).toContain("Woof School");
+    const home = pageMetadata({ title: "Hosky · QuantumWoof", description: "d", path: "/" });
+    expect((home.openGraph as { images: { alt: string }[] }).images[0].alt).toBe("Hosky · QuantumWoof");
+    expect(notFoundMetadata.title).toBe("Lost in space · QuantumWoof");
+    expect((notFoundMetadata.robots as { index: boolean }).index).toBe(false);
   });
 
   test("pageMetadata gives each page its own canonical, OG text/url and the share image", () => {

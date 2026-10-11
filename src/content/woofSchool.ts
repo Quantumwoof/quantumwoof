@@ -33,7 +33,7 @@ export type SchoolTopic = {
   };
 };
 
-/** 9 of 11 after Tools + Tonight merged into Go outside (was 10 of 12). */
+/** Topics to woof for the certificate: every open topic (9 of 9). */
 export const SNIFFER_THRESHOLD = 9;
 
 export const schoolTopics: SchoolTopic[] = [
@@ -989,6 +989,18 @@ export function getTopic(slug: string): SchoolTopic | undefined {
 
 export function readyTopics(): SchoolTopic[] {
   return schoolTopics.filter((t) => t.status === "ready");
+}
+
+/**
+ * Number of open (ready) topics — the denominator users see ("9 of 9").
+ * The "sniff later" stubs are not counted anywhere in the UI.
+ */
+export const READY_TOPIC_COUNT = readyTopics().length;
+
+/** Distinct open topics in a list of woofed slugs (ignores unknown / sniff-later slugs). */
+export function countOpenWoofed(woofed: readonly string[]): number {
+  const open = new Set(readyTopics().map((t) => t.slug));
+  return new Set(woofed.filter((s) => open.has(s))).size;
 }
 
 /** Ready topics in Hosky-suggested order (skips sniff-later stubs). */

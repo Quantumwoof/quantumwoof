@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { schoolTopics, SNIFFER_THRESHOLD } from "@/content/woofSchool";
+import { READY_TOPIC_COUNT, SNIFFER_THRESHOLD } from "@/content/woofSchool";
 
 export function SkyDesk() {
   return (
@@ -11,7 +11,7 @@ export function SkyDesk() {
             Open campus astronomy with Hosky — chill micro-lessons, tiny woof checks, and a silly
             title when you sniff enough courtyards:{" "}
             <span className="text-lavender">Certified Nebula Sniffer</span> ({SNIFFER_THRESHOLD}/
-            {schoolTopics.length}). Wander free; the full map lives on campus.
+            {READY_TOPIC_COUNT}). Wander free; the full map lives on campus.
           </p>
         </div>
         <Link

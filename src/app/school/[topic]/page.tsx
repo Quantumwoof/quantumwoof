@@ -34,7 +34,7 @@ export default async function SchoolTopicPage({ params }: Props) {
   if (topic.status === "later") {
     return (
       <div className="mx-auto max-w-2xl space-y-6 py-2">
-        <Link href="/school" className="text-sm text-electric hover:text-white">
+        <Link href="/school" className="inline-flex min-h-6 items-center text-sm text-electric hover:text-white">
           ← Campus map
         </Link>
         <div className="bento-card p-6 sm:p-8">
@@ -63,7 +63,7 @@ export default async function SchoolTopicPage({ params }: Props) {
     <div className="mx-auto max-w-3xl space-y-6 py-2">
       <MarkVisited slug={topic.slug} />
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <Link href="/school" className="text-sm text-electric hover:text-white">
+        <Link href="/school" className="inline-flex min-h-6 items-center text-sm text-electric hover:text-white">
           ← Campus map
         </Link>
         <TopicStamp slug={topic.slug} />
@@ -82,7 +82,7 @@ export default async function SchoolTopicPage({ params }: Props) {
       <TopicSlides topic={topic} />
 
       <div className="flex flex-wrap gap-3 pb-4 text-sm">
-        <Link href="/school" className="text-electric hover:text-white">
+        <Link href="/school" className="inline-flex min-h-6 items-center text-electric hover:text-white">
           ← All courtyards
         </Link>
       </div>

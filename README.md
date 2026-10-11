@@ -79,7 +79,7 @@ Simple App Router GET routes — curated content, no database. CORS allows publi
 |--------|------|----------|
 | `GET` | `/api/health` | `{ ok, service, time }` |
 | `GET` | `/api/sky-fact` | Current 12h-slot astronomy fact (`fact`, `slot`/`index`, `nextChangeAt`, `hoursLeft`) |
-| `GET` | `/api/tonight-stars?country=NG` | Hemisphere + tonight’s stars/constellations (default country `NG`) |
+| `GET` | `/api/tonight-stars?country=NG` | Hemisphere + tonight’s stars/constellations (`country` is required; 400 `country_required` / `invalid_country` otherwise) |
 | `GET` | `/api/wooftag/status` | Daily Wooftag bowl (`remaining`, `minted`, cap 200 UTC) |
 | `POST` | `/api/wooftag/mint` | Issue Wooftag (plaintext once; server stores hash only) |
 

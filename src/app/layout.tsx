@@ -63,9 +63,6 @@ export const metadata: Metadata = {
     description: site.description,
     images: ["/og-x.jpg"],
   },
-  other: {
-    "mobile-web-app-capable": "yes",
-  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

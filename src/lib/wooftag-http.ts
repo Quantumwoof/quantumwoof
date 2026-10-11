@@ -45,6 +45,18 @@ export function json(
   return res;
 }
 
+/** 405 with a short JSON body and an Allow header (for POST-only routes hit with GET). */
+export function methodNotAllowed(allow: string) {
+  return json(
+    {
+      ok: false,
+      error: "method_not_allowed",
+      message: `Use ${allow} for this endpoint.`,
+    },
+    { status: 405, headers: { Allow: allow } },
+  );
+}
+
 type CookieSet = {
   name: string;
   value: string;

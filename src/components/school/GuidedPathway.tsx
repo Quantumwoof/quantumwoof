@@ -11,14 +11,6 @@ export function GuidedPathway() {
   const live = liveGuidedOrder();
   const first = live[0];
 
-  if (!ready) {
-    return (
-      <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-slate-muted">
-        Warming the pathway picker…
-      </div>
-    );
-  }
-
   const continueTopic = path.topicSlug ? getTopic(path.topicSlug) : first;
   const continueReady = continueTopic?.status === "ready";
   const resumeHref =
@@ -54,7 +46,7 @@ export function GuidedPathway() {
   const guidedActive = mode === "guided" || mode === null;
 
   return (
-    <section className="space-y-3">
+    <section className="space-y-3" aria-busy={!ready}>
       <div>
         <p className="card-label mb-1">Pathway</p>
         <p className="text-sm leading-relaxed text-slate">

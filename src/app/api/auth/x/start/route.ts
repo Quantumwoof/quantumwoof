@@ -21,22 +21,38 @@ import { getWooftagStore } from "@/lib/wooftag-store";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+function wantsJson(req: NextRequest): boolean {
+  const accept = req.headers.get("accept") ?? "";
+  return accept.includes("application/json") && !accept.includes("text/html");
+}
+
 export async function GET(req: NextRequest) {
-  if (!isWooftagXClaimEnabled()) {
-    return json(
-      { ok: false, error: "disabled", message: WOOFTAG_X_MESSAGES.disabled },
-      { status: 404 },
-    );
-  }
+  // Browser navigation (a link / window.location), so a disabled flow lands the
+  // visitor back on the certificate with a friendly notice — same shape as the
+  // callback route. Non-browser clients (Accept: application/json, no text/html)
+  // keep the JSON 404.
+  const disabled = () => {
+    if (wantsJson(req)) {
+      return json(
+        { ok: false, error: "disabled", message: WOOFTAG_X_MESSAGES.disabled },
+        { status: 404 },
+      );
+    }
+    // Relative Location on purpose: never built from request headers.
+    return new NextResponse(null, {
+      status: 302,
+      headers: {
+        Location: "/school?x_auth=disabled#certificate",
+        "Cache-Control": "no-store",
+      },
+    });
+  };
+
+  if (!isWooftagXClaimEnabled()) return disabled();
 
   const clientId = xClientId();
   const clientSecret = xClientSecret();
-  if (!clientId || !clientSecret) {
-    return json(
-      { ok: false, error: "disabled", message: WOOFTAG_X_MESSAGES.disabled },
-      { status: 404 },
-    );
-  }
+  if (!clientId || !clientSecret) return disabled();
 
   const store = getWooftagStore();
   if (!store) {

@@ -22,6 +22,7 @@ import {
   ensureBrowserId,
   gateTooFresh,
   json,
+  methodNotAllowed,
   queueCookie,
   readBrowserId,
 } from "@/lib/wooftag-http";
@@ -41,6 +42,10 @@ const STALE_QUEUE_MS = QUEUE_STALE_MS;
  * Needs all ready-topic day-scoped stamps for this browser on this UTC day.
  * One claim per X account per UTC day (SET NX). History keeps past daily tags.
  */
+export function GET() {
+  return methodNotAllowed("POST");
+}
+
 export async function POST(req: NextRequest) {
   const forbidden = rejectForeignOrigin(req);
   if (forbidden) return forbidden;

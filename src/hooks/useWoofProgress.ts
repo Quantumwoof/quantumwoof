@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { useHydrated } from "@/hooks/useHydrated";
-import { SNIFFER_THRESHOLD, schoolTopics } from "@/content/woofSchool";
+import { READY_TOPIC_COUNT, SNIFFER_THRESHOLD, countOpenWoofed } from "@/content/woofSchool";
 
 const STORAGE_KEY = "quantumwoof.woof-school.v1";
 const STARTED_KEY = "quantumwoof.woof-school.startedAt";
@@ -107,9 +107,8 @@ export function useWoofProgress() {
     [progress.woofed],
   );
 
-  const woofedCount = progress.woofed.filter((s) =>
-    schoolTopics.some((t) => t.slug === s),
-  ).length;
+  // Only open topics count; "sniff later" stubs can never be woofed.
+  const woofedCount = countOpenWoofed(progress.woofed);
 
   const isSniffer = woofedCount >= SNIFFER_THRESHOLD;
 
@@ -118,7 +117,7 @@ export function useWoofProgress() {
     progress,
     startedAt,
     woofedCount,
-    totalTopics: schoolTopics.length,
+    totalTopics: READY_TOPIC_COUNT,
     threshold: SNIFFER_THRESHOLD,
     isSniffer,
     isWoofed,

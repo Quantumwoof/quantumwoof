@@ -6,17 +6,17 @@ export function Footer() {
     <footer className="mx-auto mt-16 w-full max-w-6xl border-t border-white/10 px-4 py-8 text-sm text-slate-muted sm:px-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p>Built with curiosity · {site.name}</p>
-        <p className="text-xs">
+        <p className="flex flex-wrap items-center gap-x-1 text-xs">
           <Link
             href="/privacy"
-            className="text-electric transition hover:text-white"
+            className="inline-flex min-h-6 items-center text-electric transition hover:text-white"
           >
             Privacy
           </Link>
           {" · "}
           <a
             href={`mailto:${site.contact.email}`}
-            className="text-electric transition hover:text-white"
+            className="inline-flex min-h-6 items-center text-electric transition hover:text-white"
           >
             {site.contact.email}
           </a>

@@ -10,7 +10,7 @@ export function AboutCard() {
           src="/hosky-mark.png"
           alt="Hosky — half husky, half wireframe"
           width={128}
-          height={128}
+          height={191}
           className="relative rounded-full ring-2 ring-white/10 shadow-[0_0_40px_rgba(0,204,255,0.2)]"
           priority
         />

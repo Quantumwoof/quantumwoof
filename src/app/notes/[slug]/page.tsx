@@ -32,7 +32,7 @@ export default async function NotePage({ params }: Props) {
     <article className="mx-auto max-w-2xl">
       <Link
         href="/notes"
-        className="text-sm text-electric transition hover:text-white"
+        className="inline-flex min-h-6 items-center text-sm text-electric transition hover:text-white"
       >
         ← All notes
       </Link>

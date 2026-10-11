@@ -80,6 +80,13 @@ export function getCountryByCode(code: string | null | undefined): CountryOption
   return found ?? COUNTRIES.find((c) => c.code === DEFAULT_COUNTRY_CODE)!;
 }
 
+/** Strict lookup: null for a missing or unknown code (no fallback). */
+export function findCountry(code: string | null | undefined): CountryOption | null {
+  if (!code) return null;
+  const upper = code.trim().toUpperCase();
+  return COUNTRIES.find((c) => c.code === upper) ?? null;
+}
+
 export function hemisphereForCountry(code: string | null | undefined): Hemisphere {
   return getCountryByCode(code).hemisphere;
 }

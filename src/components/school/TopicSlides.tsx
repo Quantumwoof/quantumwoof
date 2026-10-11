@@ -70,7 +70,7 @@ export function TopicSlides({ topic }: Props) {
           {progressLabel}
         </p>
         <div
-          className="flex items-center gap-1.5"
+          className="flex items-center"
           aria-label={`Step ${step + 1} of ${totalSteps}`}
         >
           {Array.from({ length: totalSteps }, (_, i) => (
@@ -78,20 +78,26 @@ export function TopicSlides({ topic }: Props) {
               key={i}
               type="button"
               onClick={() => go(i)}
-              className={`h-2.5 w-2.5 rounded-full transition ${
-                i === step
-                  ? "scale-125 bg-electric"
-                  : i < step
-                    ? "bg-electric/50"
-                    : "bg-white/20"
-              }`}
+              // 24×24 hit area (WCAG 2.5.8); the visible dot stays small.
+              className="group inline-flex h-6 w-6 items-center justify-center rounded-full"
               aria-label={
                 i < lessons.length
                   ? `Go to lesson ${i + 1}`
                   : "Go to tiny woof check"
               }
               aria-current={i === step ? "step" : undefined}
-            />
+            >
+              <span
+                aria-hidden
+                className={`block h-2.5 w-2.5 rounded-full transition group-hover:bg-electric ${
+                  i === step
+                    ? "scale-125 bg-electric"
+                    : i < step
+                      ? "bg-electric/50"
+                      : "bg-white/20"
+                }`}
+              />
+            </button>
           ))}
         </div>
       </div>

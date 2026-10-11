@@ -24,6 +24,7 @@ import {
   ensureBrowserId,
   gateTooFresh,
   json,
+  methodNotAllowed,
   queueCookie,
   readQueueToken,
 } from "@/lib/wooftag-http";
@@ -45,6 +46,10 @@ type MintBody = {
   startedAt?: unknown;
   queueToken?: unknown;
 };
+
+export function GET() {
+  return methodNotAllowed("POST");
+}
 
 export async function POST(req: NextRequest) {
   const forbidden = rejectForeignOrigin(req);

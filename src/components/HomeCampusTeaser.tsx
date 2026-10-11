@@ -1,9 +1,9 @@
 import Link from "next/link";
-import { SNIFFER_THRESHOLD, readyTopics, schoolTopics } from "@/content/woofSchool";
+import { READY_TOPIC_COUNT, SNIFFER_THRESHOLD } from "@/content/woofSchool";
 
 /** Home campus CTA — teaser only, zero topic cards. */
 export function HomeCampusTeaser() {
-  const ready = readyTopics().length;
+  const ready = READY_TOPIC_COUNT;
   return (
     <div className="space-y-4">
       <p className="card-label text-gold">Woof School</p>
@@ -11,7 +11,7 @@ export function HomeCampusTeaser() {
       <p className="max-w-2xl text-sm leading-relaxed text-slate">
         Sniff courtyards. Unlock{" "}
         <span className="text-lavender">Certified Nebula Sniffer</span> ({SNIFFER_THRESHOLD}/
-        {schoolTopics.length}). {ready} ready paths — no topic dump on home.
+        {READY_TOPIC_COUNT}). {ready} ready paths — no topic dump on home.
       </p>
       <Link
         href="/school"

@@ -3,7 +3,7 @@ import { getTopic } from "@/content/woofSchool";
 import { gradeWoofCheck } from "@/content/woofSchool-answers";
 import { utcDateKey } from "@/lib/wooftag";
 import { getWooftagStore } from "@/lib/wooftag-store";
-import { clientIp, ensureBrowserId, json } from "@/lib/wooftag-http";
+import { clientIp, ensureBrowserId, json, methodNotAllowed } from "@/lib/wooftag-http";
 import { rejectForeignOrigin } from "@/lib/request-origin";
 
 export const runtime = "nodejs";
@@ -13,6 +13,10 @@ type CheckBody = {
   topic?: unknown;
   answers?: unknown;
 };
+
+export function GET() {
+  return methodNotAllowed("POST");
+}
 
 export async function POST(req: NextRequest) {
   const forbidden = rejectForeignOrigin(req);
