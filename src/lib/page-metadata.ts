@@ -48,6 +48,8 @@ export function pageMetadata({
     },
     twitter: {
       card: "summary_large_image",
+      site: site.socials.handle,
+      creator: site.socials.handle,
       title,
       description,
       images: [{ url: OG_IMAGE.url, alt: ogAlt(title) }],
@@ -67,6 +69,8 @@ export const notFoundMetadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
+    site: site.socials.handle,
+    creator: site.socials.handle,
     title: "Lost in space · QuantumWoof",
     images: [{ url: OG_IMAGE.url, alt: ogAlt("Lost in space · QuantumWoof") }],
   },

@@ -5,9 +5,9 @@ export const site = {
     "A personal digital garden — notes, sky-watching, and small lessons from a chill professor husky.",
   tagline: "Curious by nature. Precise by habit.",
   socials: {
-    x: "https://x.com/quantumwoofada",
+    x: "https://x.com/qtmwoof",
     github: "https://github.com/Quantumwoof/quantumwoof",
-    handle: "@quantumwoofada",
+    handle: "@qtmwoof",
   },
   contact: {
     email: "hello@quantumwoof.io",
