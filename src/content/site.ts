@@ -2,7 +2,7 @@ export const site = {
   name: "Hosky",
   title: "Hosky · QuantumWoof",
   description:
-    "A personal digital garden — notes, sky-watching, and small lessons from a chill professor husky.",
+    "A personal digital garden — notes, sky-watching, and small lessons from Hosky, a chill professor husky.",
   tagline: "Curious by nature. Precise by habit.",
   socials: {
     x: "https://x.com/qtmwoof",

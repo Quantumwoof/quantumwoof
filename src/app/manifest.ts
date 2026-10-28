@@ -5,7 +5,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "Quantumwoof",
     short_name: "Quantumwoof",
     description:
-      "A personal digital garden — notes, sky-watching, and small lessons from a chill professor husky.",
+      "A personal digital garden — notes, sky-watching, and small lessons from Hosky, a chill professor husky.",
     start_url: "/",
     display: "standalone",
     background_color: "#020617",

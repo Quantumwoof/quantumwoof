@@ -74,7 +74,7 @@ export function SnifferCertificate() {
             Certified Nebula Sniffer
           </h2>
           <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate">
-            This husky confirms you sniffed enough nebulae to be dangerous at dinner parties.
+            Hosky confirms you sniffed enough nebulae to be dangerous at dinner parties.
             Coverage: {woofedCount}/{totalTopics} topics woofed.
           </p>
 

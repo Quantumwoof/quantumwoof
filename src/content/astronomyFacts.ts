@@ -5,7 +5,7 @@
  * Display copy uses UTC countdown; slot math stays shared.
  */
 export const astronomyFacts = [
-  "One light-year is about 9.5 trillion kilometers — a long fetch, even for a determined husky.",
+  "One light-year is about 9.5 trillion kilometers — a long fetch, even for a determined Hosky.",
   "The Moon is slowly drifting away from Earth by roughly 3.8 centimeters each year. Quiet progress.",
   "Venus spins backwards compared with most planets. Its day is longer than its year.",
   "A teaspoon of neutron-star material would weigh billions of tons on Earth. Dense, and not snackable.",

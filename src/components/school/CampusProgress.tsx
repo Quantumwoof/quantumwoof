@@ -46,7 +46,7 @@ export function CampusProgress() {
         <div className="mt-4 rounded-xl border border-lavender/35 bg-lavender/10 p-4">
           <p className="text-sm font-semibold text-lavender">Certified Nebula Sniffer</p>
           <p className="mt-1 text-sm text-slate">
-            This husky confirms you sniffed enough nebulae to be dangerous at dinner parties.
+            Hosky confirms you sniffed enough nebulae to be dangerous at dinner parties.
           </p>
           <Link
             href="/school#certificate"
