@@ -25,6 +25,8 @@ export type Fx = {
   time: number;
   /** Distance "travelled" through the galaxy — drives the parallax scroll. */
   travel: number;
+  /** Smoothed scroll-speed factor (1 = cruise). */
+  rate: number;
   smokeAcc: number;
 };
 
@@ -171,6 +173,7 @@ export function createFx(reduced: boolean): Fx {
     reduced,
     time: 0,
     travel: 0,
+    rate: 1,
     smokeAcc: 0,
   };
 }
@@ -229,7 +232,7 @@ export function applyEvents(fx: Fx, events: GameEvent[]) {
       case "detonate": {
         const c = SPECTRAL[ev.type].color;
         const g = SPECTRAL[ev.type].glow;
-        const big = ev.points >= 8;
+        const big = ev.boost >= 20;
         burst(fx, ev.x, ev.y, c, big ? 90 : 45, big ? 420 : 260, 0.9, 3);
         burst(fx, ev.x, ev.y, g, big ? 50 : 24, big ? 260 : 160, 1.1, 4);
         for (let i = 0; i < (big ? 9 : 5); i++) puff(fx, ev.x, ev.y, i % 2 ? c : g, 70 + Math.random() * 70, big ? 150 : 90, 1.4, 0.55, 2.6);
@@ -238,7 +241,7 @@ export function applyEvents(fx: Fx, events: GameEvent[]) {
         fx.shake = Math.max(fx.shake, big ? 12 : 5);
         fx.floaters.push({
           x: ev.x, y: ev.y - 30,
-          text: `${ev.type}  +${Number.isInteger(ev.points) ? ev.points : ev.points.toFixed(1)}${ev.mult > 1 ? `  ×${ev.mult}` : ""}`,
+          text: `${ev.type}  boost ×${ev.boost >= 10 ? Math.round(ev.boost) : ev.boost.toFixed(1)}`,
           color: c, life: 1.5, big,
         });
         break;
@@ -266,8 +269,10 @@ export function applyEvents(fx: Fx, events: GameEvent[]) {
 
 export function stepFx(fx: Fx, dt: number, g?: StarForm) {
   fx.time += dt;
-  // The galaxy rushes by faster as the run heats up.
-  fx.travel += dt * (g ? 1 + 0.6 * Math.min(1, (g.speedMul() - 1) / 1.4) : 1);
+  // The galaxy rushes past faster the harder you are boosting.
+  const target = g ? Math.min(8, 1 + 1.25 * Math.log(Math.max(1, g.speedNow()))) : 1;
+  fx.rate += (target - fx.rate) * Math.min(1, dt * (target > fx.rate ? 7 : 2.2));
+  fx.travel += dt * fx.rate;
   fx.shake = Math.max(0, fx.shake - dt * 40);
   fx.flash = Math.max(0, fx.flash - dt * 2.2);
   if (fx.toast) {
@@ -676,7 +681,7 @@ export function draw(ctx: CanvasRenderingContext2D, g: StarForm, fx: Fx, o: Draw
   for (let li = 0; li < fx.layers.length; li++) {
     const L = fx.layers[li];
     const off = fx.travel * L.speed;
-    const streak = li === 3 ? 7 : li === 2 ? 3 : 0;
+    const streak = Math.min(220, (li + 1) * L.speed * 0.006 * (fx.rate - 1) * 3 + (li === 3 ? 7 : li === 2 ? 3 : 0));
     for (const s of L.pts) {
       const y = (s.y + off) % WORLD_H;
       const a = L.alpha * (0.6 + 0.4 * Math.sin(t * (0.8 + li * 0.5) + s.tw));
@@ -685,6 +690,16 @@ export function draw(ctx: CanvasRenderingContext2D, g: StarForm, fx: Fx, o: Draw
       if (streak) ctx.fillRect(s.x, y - streak, L.size * 0.7, L.size + streak);
       else ctx.fillRect(s.x, y, L.size, L.size);
     }
+  }
+
+  // boost tint: the faster we go, the more the edges glow
+  if (fx.rate > 1.6) {
+    const k = Math.min(1, (fx.rate - 1.6) / 5);
+    const vg = ctx.createRadialGradient(WORLD_W / 2, WORLD_H * 0.6, WORLD_H * 0.25, WORLD_W / 2, WORLD_H * 0.6, WORLD_H * 0.75);
+    vg.addColorStop(0, "rgba(120,170,255,0)");
+    vg.addColorStop(1, `rgba(120,170,255,${0.22 * k})`);
+    ctx.fillStyle = vg;
+    ctx.fillRect(0, 0, WORLD_W, WORLD_H);
   }
 
   // arena frame

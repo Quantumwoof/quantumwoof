@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { CLOUD, LB, SPECTRAL, SPECTRAL_ORDER, STEP, MAX_REMNANTS, type SpectralId } from "./config";
-import { StarForm, classify, partsOf, scoreOf } from "./engine";
-import { checkRun, parseRun, sanitizeName } from "./validate";
+import { CLOUD, LB, SPECTRAL, SPECTRAL_ORDER, STEP, MAX_REMNANTS, LS_PER_LY, TRAVEL, type SpectralId } from "./config";
+import { DistanceTracker, formatDistance, simulateDistance } from "./distance";
+import { StarForm, classify, partsOf } from "./engine";
+import { elapsedLooksRight, parseRun, sanitizeName, verifyRun, type RunDet } from "./validate";
 
 function snapshot(seed: number, seconds: number) {
   const g = new StarForm(seed);
@@ -77,7 +78,7 @@ describe("star form engine", () => {
       expect(g.detonations[n].m).toBe(Math.min(n, 4)); // chain grows within the window
     }
     expect(last).toBe("O");
-    expect(g.score).toBe(scoreOf(g.detonations));
+    expect(g.speedNow()).toBeGreaterThan(100); // stacked boosts, soft-capped
     expect(g.remnants.filter((r) => r.fade <= 0).length).toBeLessThanOrEqual(MAX_REMNANTS);
     for (let i = 0; i < 90; i++) g.step(); // fade completes
     expect(g.remnants.length).toBeLessThanOrEqual(MAX_REMNANTS);
@@ -191,9 +192,102 @@ describe("harder progression", () => {
   });
 });
 
-describe("honest simulated runs pass the server check", () => {
-  for (const target of ["M", "G", "O"] as const) {
-    test(`bot aiming for ${target}`, () => {
+describe("distance travelled", () => {
+  test("cruise only: distance = base speed × time", () => {
+    const t = new DistanceTracker();
+    for (let i = 0; i < 600; i++) t.step();
+    expect(t.dist).toBeCloseTo(TRAVEL.baseLsPerSec * 10, 3);
+    expect(t.speedMul()).toBe(1);
+  });
+
+  test("boost scales with star size, decays back to cruise, and chain scales it", () => {
+    const peak = (k: SpectralId, m = 0) => {
+      const t = new DistanceTracker();
+      t.add(k, m);
+      return t.speedMul();
+    };
+    const order = [...SPECTRAL_ORDER].reverse(); // M … O
+    for (let i = 1; i < order.length; i++) expect(peak(order[i])).toBeGreaterThan(peak(order[i - 1]));
+    expect(peak("M")).toBeLessThan(1.5);
+    expect(peak("O")).toBeGreaterThan(200);
+    expect(peak("G", 4)).toBeGreaterThan(peak("G", 0));
+    const t = new DistanceTracker();
+    t.add("G", 0);
+    for (let i = 0; i < 60 * 30; i++) t.step();
+    expect(t.speedMul()).toBeLessThan(1.01);
+  });
+
+  test("stacking is sensible: two boosts beat one but never exceed the soft cap", () => {
+    const one = new DistanceTracker();
+    one.add("A", 0);
+    const two = new DistanceTracker();
+    two.add("A", 0);
+    two.add("A", 1);
+    expect(two.speedMul()).toBeGreaterThan(one.speedMul());
+    const many = new DistanceTracker();
+    for (let i = 0; i < 20; i++) many.add("O", 4);
+    expect(many.speedMul()).toBeLessThanOrEqual(1 + TRAVEL.softCap + 1e-9);
+  });
+
+  test("the engine's live distance equals the server's recomputation", () => {
+    const g = new StarForm(99);
+    g.cloud.invuln = 99999;
+    for (let i = 0; i < 60 * 40; i++) {
+      if (i === 300 || i === 700 || i === 1500) {
+        g.cloud.mass = 60;
+        g.cloud.comp = 1;
+        g.detonate();
+      }
+      g.input.tx = g.gas[0]?.x ?? 400;
+      g.input.ty = g.gas[0]?.y ?? 500;
+      g.step();
+      g.drain();
+    }
+    const sum = g.summary();
+    expect(sum.detonations.length).toBe(3);
+    expect(simulateDistance(sum.steps, sum.detonations)).toBeCloseTo(sum.distance, 3);
+    expect(sum.distance).toBeGreaterThan(TRAVEL.baseLsPerSec * 40 * 3);
+  });
+
+  test("formatDistance rolls up seconds → minutes → hours → days → years", () => {
+    expect(formatDistance(30).unit).toBe("light-seconds");
+    expect(formatDistance(600).unit).toBe("light-minutes");
+    expect(formatDistance(7200).unit).toBe("light-hours");
+    expect(formatDistance(3 * 86_400).unit).toBe("light-days");
+    expect(formatDistance(LS_PER_LY * 2).text).toBe("2.00 light-years");
+  });
+});
+
+describe("run verification", () => {
+  const mk = (dets: RunDet[], steps = (dets[dets.length - 1]?.s ?? 0) + 900): Parameters<typeof verifyRun>[0] => ({
+    name: "Pup",
+    runId: "ABCDEFGH23",
+    steps,
+    detonations: dets,
+  });
+  const G = (s: number, m = 0): RunDet => ({ k: "G", m, s });
+
+  test("honest run passes and the server distance equals the simulation", () => {
+    const dets = [G(1500), G(1800, 1), G(2100, 2)];
+    const v = verifyRun(mk(dets));
+    expect(v.ok).toBe(true);
+    if (v.ok) expect(v.distance).toBeCloseTo(simulateDistance(mk(dets).steps, dets), 6);
+  });
+
+  test("bad timing, chain, mass and duration are rejected", () => {
+    expect((verifyRun(mk([G(1500), G(1505, 1)])) as { error: string }).error).toBe("bad_timing"); // inside the cooldown
+    expect((verifyRun(mk([G(1500), G(1800, 3)])) as { error: string }).error).toBe("bad_chain"); // jump in chain
+    expect((verifyRun(mk([G(1500), G(5000, 1)])) as { error: string }).error).toBe("bad_chain"); // window long gone
+    expect((verifyRun(mk([G(1500, 2)])) as { error: string }).error).toBe("bad_chain"); // first must be 0
+    const fast = Array.from({ length: 12 }, (_, i) => ({ k: "O" as const, m: Math.min(i, 4), s: 700 + i * 60 }));
+    expect((verifyRun(mk(fast)) as { error: string }).error).toBe("impossible_mass");
+    expect((verifyRun(mk([G(100)], 100)) as { error: string }).error).toBe("bad_duration");
+    expect((verifyRun(mk([G(1500)], Math.round((LB.maxDurationSec + 5) / STEP))) as { error: string }).error).toBe("bad_duration");
+    expect((verifyRun(mk([G(1500)], 1000)) as { error: string }).error).toBe("bad_timing"); // after the run ended
+  });
+
+  test("honest simulated bot runs pass verification", () => {
+    for (const target of ["M", "G"] as const) {
       const g = new StarForm(1234);
       const idx = SPECTRAL_ORDER.indexOf(target);
       while (!g.ended && g.t < 240) {
@@ -216,41 +310,29 @@ describe("honest simulated runs pass the server check", () => {
         g.step();
         g.drain();
       }
-      const s = g.summary();
-      if (s.detonations.length === 0) return;
-      const r = parseRun({ ...s, name: "Bot" });
-      expect(r.ok).toBe(true);
-      if (r.ok) expect(checkRun(r.run)).toBeNull();
-    });
-  }
-});
-
-describe("star form score validation", () => {
-  const run = (dets: { k: SpectralId; m: number }[], score = scoreOf(dets), durationSec = 120) => ({
-    name: "Pup",
-    score,
-    durationSec,
-    detonations: dets,
+      const sum = g.summary();
+      const parsed = parseRun({ name: "Bot", runId: "ABCDEFGH23", steps: sum.steps, detonations: sum.detonations });
+      expect(parsed.ok).toBe(true);
+      if (parsed.ok) {
+        const v = verifyRun(parsed.run);
+        expect(v.ok).toBe(true);
+        if (v.ok) expect(v.distance).toBeCloseTo(sum.distance, 2);
+      }
+    }
   });
 
-  test("honest run passes; wrong arithmetic fails", () => {
-    const dets = [{ k: "G" as const, m: 0 }, { k: "K" as const, m: 1 }];
-    expect(checkRun(run(dets))).toBeNull();
-    expect(checkRun(run(dets, 999))).toBe("score_mismatch");
-  });
-
-  test("impossible mass, bad chain, bad duration are rejected", () => {
-    const many = Array.from({ length: 60 }, () => ({ k: "O" as const, m: 0 }));
-    expect(checkRun(run(many, scoreOf(many), 20))).toBe("impossible_mass");
-    expect(checkRun(run([{ k: "G", m: 3 }]))).toBe("bad_chain");
-    expect(checkRun(run([{ k: "G", m: 0 }], undefined, 1))).toBe("bad_duration");
-    expect(checkRun(run([{ k: "G", m: 0 }], undefined, LB.maxDurationSec + 1))).toBe("bad_duration");
+  test("wall-clock check: a run can't last longer than the time since it started", () => {
+    const now = 1_000_000_000;
+    expect(elapsedLooksRight(6000, now - 101_000, now)).toBe(true); // 100 s run, 101 s elapsed
+    expect(elapsedLooksRight(6000, now - 5_000, now)).toBe(false); // claimed 100 s in 5 s
+    expect(elapsedLooksRight(6000, now - (LB.runTtlSec + 10) * 1000, now)).toBe(false);
   });
 
   test("parseRun rejects junk and sanitizeName cleans names", () => {
     expect(parseRun(null).ok).toBe(false);
-    expect(parseRun({ score: 1, durationSec: 10, detonations: [{ k: "Z", m: 0 }], name: "x" }).ok).toBe(false);
-    expect(parseRun({ score: 6, durationSec: 10, detonations: [{ k: "G", m: 0 }], name: "   " }).ok).toBe(false);
+    expect(parseRun({ name: "x", runId: "bad id", steps: 1000, detonations: [G(1)] }).ok).toBe(false);
+    expect(parseRun({ name: "x", runId: "ABCDEFGH23", steps: 1000, detonations: [{ k: "Z", m: 0, s: 1 }] }).ok).toBe(false);
+    expect(parseRun({ name: "   ", runId: "ABCDEFGH23", steps: 1000, detonations: [G(1)] }).ok).toBe(false);
     expect(sanitizeName("<script>alert(1)</script> Hosky pup 🐾 way too long name here")).not.toMatch(/[<>()]/);
     expect(sanitizeName("a".repeat(100)).length).toBe(LB.nameMax);
   });

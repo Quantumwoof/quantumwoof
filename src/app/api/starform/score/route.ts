@@ -3,8 +3,7 @@ import { clientIp, json, methodNotAllowed } from "@/lib/wooftag-http";
 import { rejectForeignOrigin } from "@/lib/request-origin";
 import { newOpaqueId } from "@/lib/wooftag";
 import { getStarFormStore } from "@/lib/starform/store";
-import { scoreOf } from "@/lib/starform/engine";
-import { checkRun, parseRun } from "@/lib/starform/validate";
+import { elapsedLooksRight, parseRun, verifyRun } from "@/lib/starform/validate";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,7 +14,7 @@ export function GET() {
   return methodNotAllowed("POST");
 }
 
-/** Post a finished run to the all-time top 3. Only top-3 scores are stored. */
+/** Post a finished run to the all-time top 3. Only top-3 distances are stored. */
 export async function POST(req: NextRequest) {
   const forbidden = rejectForeignOrigin(req);
   if (forbidden) return forbidden;
@@ -55,22 +54,31 @@ export async function POST(req: NextRequest) {
   if (!parsed.ok) {
     return json({ ok: false, error: parsed.error, message: "That run could not be read." }, { status: 400 });
   }
-  const bad = checkRun(parsed.run);
-  if (bad) {
+  const verdict = verifyRun(parsed.run);
+  if (!verdict.ok) {
     return json({ ok: false, error: "invalid_run", message: "That run did not add up." }, { status: 422 });
   }
 
-  const score = scoreOf(parsed.run.detonations);
+  // The run id is single use and proves how long ago the run began.
+  const startedAt = await store.takeRun(parsed.run.runId);
+  if (startedAt === null || !elapsedLooksRight(parsed.run.steps, startedAt, Date.now())) {
+    return json(
+      { ok: false, error: "invalid_run", message: "That run could not be confirmed. Start a fresh one." },
+      { status: 422 },
+    );
+  }
+
   const placed = await store.submit({
     id: newOpaqueId(8),
     name: parsed.run.name,
-    score,
+    distance: verdict.distance,
     at: new Date().toISOString(),
   });
   const top = await store.top3();
   return json({
     ok: true,
     placed,
-    top: top.map((e) => ({ name: e.name, score: Math.round(e.score), at: e.at })),
+    distance: verdict.distance,
+    top: top.map((e) => ({ name: e.name, distance: e.distance, at: e.at })),
   });
 }

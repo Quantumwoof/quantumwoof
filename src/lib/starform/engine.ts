@@ -5,6 +5,7 @@
  * Fairness note: obstacle and gas *spawn schedules* depend only on the seed and
  * on elapsed sim time, never on what the player does, so one seed = one pattern.
  */
+import { DistanceTracker } from "./distance";
 import {
   BLAST,
   CLOUD,
@@ -83,13 +84,13 @@ export type Remnant = {
   shell: number;
 };
 
-export type Detonation = { k: SpectralId; m: number; t: number };
+export type Detonation = { k: SpectralId; m: number; t: number; /** engine step count at detonation */ s: number };
 
 export type GameEvent =
   | { e: "gas"; x: number; y: number }
   | { e: "kill"; x: number; y: number; by: SpectralId | "blast" }
   | { e: "hit"; x: number; y: number }
-  | { e: "detonate"; x: number; y: number; type: SpectralId; points: number; mult: number; blast: number }
+  | { e: "detonate"; x: number; y: number; type: SpectralId; boost: number; mult: number; blast: number }
   | { e: "fizzle"; x: number; y: number }
   | { e: "remnantEnd"; x: number; y: number; type: SpectralId }
   | { e: "warn"; x: number; y: number }
@@ -102,13 +103,6 @@ export function classify(effMass: number): SpectralId {
 
 export function chainMultiplier(idx: number): number {
   return COMBO_STEPS[Math.max(0, Math.min(COMBO_STEPS.length - 1, idx))];
-}
-
-/** Score of one detonation list — shared with the server-side check. */
-export function scoreOf(dets: ReadonlyArray<{ k: SpectralId; m: number }>): number {
-  let s = 0;
-  for (const d of dets) s += SPECTRAL[d.k].points * chainMultiplier(d.m);
-  return Math.round(s * 1000) / 1000;
 }
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
@@ -142,7 +136,8 @@ export class StarForm {
   readonly seed: number;
   t = 0;
   lives = START_LIVES;
-  score = 0;
+  steps = 0;
+  tracker = new DistanceTracker();
   ended = false;
   cloud: Cloud = { x: WORLD_W / 2, y: WORLD_H * 0.62, mass: 0, comp: 0, invuln: NEW_CLOUD_GRACE_SEC };
   gas: Gas[] = [];
@@ -173,6 +168,14 @@ export class StarForm {
   }
 
   // ------------------------------------------------------------ derived
+  /** Distance travelled so far, in game-scale light-seconds. */
+  get distance() {
+    return this.tracker.dist;
+  }
+  /** Current speed as a multiple of cruise. */
+  speedNow() {
+    return this.tracker.speedMul();
+  }
   radius(c: Cloud = this.cloud) {
     return CLOUD.baseRadius + CLOUD.radiusPerSqrtMass * Math.sqrt(c.mass);
   }
@@ -327,9 +330,8 @@ export class StarForm {
     const spec = SPECTRAL[type];
     const idx = this.nextChainIndex();
     const mult = chainMultiplier(idx);
-    const pts = spec.points * mult;
-    this.score = Math.round((this.score + pts) * 1000) / 1000;
-    const det: Detonation = { k: type, m: idx, t: Math.round(this.t * 100) / 100 };
+    const det: Detonation = { k: type, m: idx, t: Math.round(this.t * 100) / 100, s: this.steps };
+    this.tracker.add(type, idx);
     this.detonations.push(det);
     this.chain = idx;
     this.lastDetT = this.t;
@@ -366,7 +368,7 @@ export class StarForm {
       if (live.length > MAX_REMNANTS) live[0].fade = REMNANT.fadeOutSec;
     }
 
-    this.events.push({ e: "detonate", x: c.x, y: c.y, type, points: pts, mult, blast });
+    this.events.push({ e: "detonate", x: c.x, y: c.y, type, boost: spec.boost * mult, mult, blast });
     // New cloud right away, same place; small-star niche = brief shield.
     c.mass = 0;
     c.comp = 0;
@@ -378,6 +380,8 @@ export class StarForm {
   step() {
     if (this.ended) return;
     const dt = STEP;
+    this.tracker.step();
+    this.steps++;
     this.t += dt;
     const c = this.cloud;
     const inp = this.input;
@@ -647,9 +651,10 @@ export class StarForm {
     const counts: Record<SpectralId, number> = { O: 0, B: 0, A: 0, F: 0, G: 0, K: 0, M: 0 };
     for (const d of this.detonations) counts[d.k]++;
     return {
-      score: this.score,
+      distance: this.tracker.dist,
+      steps: this.steps,
       durationSec: Math.round(this.t * 100) / 100,
-      detonations: this.detonations.map((d) => ({ k: d.k, m: d.m })),
+      detonations: this.detonations.map((d) => ({ k: d.k, m: d.m, s: d.s })),
       counts,
       kills: this.kills,
       bestChain: this.detonations.reduce((m, d) => Math.max(m, d.m), -1) + 1,

@@ -45,7 +45,7 @@ export default function SchoolCampusPage() {
           <Link href="/play/star-form" className="text-gold hover:underline">
             Hosky Star Form
           </Link>
-          : collapse gas into O to M stars and dodge passing stars and planets.
+          : collapse gas into O to M stars for speed boosts and travel as far as you can.
         </p>
       </aside>
 

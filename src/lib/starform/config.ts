@@ -66,8 +66,13 @@ export type RemnantKind = "blackhole" | "neutron" | "dwarf-clear" | "orbiter" | 
 
 export type SpectralSpec = {
   id: SpectralId;
-  /** Points per detonation (before the chain multiplier). */
-  points: number;
+  /**
+   * Speed boost on detonation, as a multiple of cruise speed (stacks, then soft-caps).
+   * The chain multiplier scales it.
+   */
+  boost: number;
+  /** Time constant (s) of the boost's exponential decay. */
+  boostSec: number;
   /** Effective mass needed to become this type. */
   minEffMass: number;
   color: string; // star colour
@@ -85,14 +90,29 @@ export type SpectralSpec = {
 };
 
 export const SPECTRAL: Record<SpectralId, SpectralSpec> = {
-  O: { id: "O", points: 15, minEffMass: 58, color: "#6fa8ff", glow: "#3b6dff", kind: "blackhole", remnantName: "Black hole", life: 15, killCost: 0.45, radius: 200, shieldSec: 0 },
-  B: { id: "B", points: 12.5, minEffMass: 41, color: "#a8d8ff", glow: "#5fb4ff", kind: "neutron", remnantName: "Neutron star", life: 13, killCost: 0.7, radius: 170, shieldSec: 0 },
-  A: { id: "A", points: 10, minEffMass: 27, color: "#f2f6ff", glow: "#b9c8ff", kind: "dwarf-clear", remnantName: "White dwarf + shell", life: 6, killCost: 0.5, radius: 420, shieldSec: 0 },
-  F: { id: "F", points: 8, minEffMass: 15, color: "#fff2b8", glow: "#ffe27a", kind: "orbiter", remnantName: "Guardian white dwarf", life: 12, killCost: 0.8, radius: 105, shieldSec: 0 },
-  G: { id: "G", points: 6, minEffMass: 8.5, color: "#ffd84a", glow: "#ffb800", kind: "patroller", remnantName: "Patrol white dwarf", life: 11, killCost: 0.8, radius: 62, shieldSec: 0.6 },
-  K: { id: "K", points: 4, minEffMass: 3.8, color: "#ffa24d", glow: "#ff7a1a", kind: "dwarf", remnantName: "Weak white dwarf", life: 6, killCost: 1.0, radius: 66, shieldSec: 1.0 },
-  M: { id: "M", points: 2, minEffMass: 0, color: "#ff8f7a", glow: "#ff5a4a", kind: "none", remnantName: "No remnant", life: 0, killCost: 0, radius: 0, shieldSec: 1.8 },
+  O: { id: "O", boost: 520, boostSec: 10, minEffMass: 58, color: "#6fa8ff", glow: "#3b6dff", kind: "blackhole", remnantName: "Black hole", life: 15, killCost: 0.45, radius: 200, shieldSec: 0 },
+  B: { id: "B", boost: 230, boostSec: 8, minEffMass: 41, color: "#a8d8ff", glow: "#5fb4ff", kind: "neutron", remnantName: "Neutron star", life: 13, killCost: 0.7, radius: 170, shieldSec: 0 },
+  A: { id: "A", boost: 95, boostSec: 6, minEffMass: 27, color: "#f2f6ff", glow: "#b9c8ff", kind: "dwarf-clear", remnantName: "White dwarf + shell", life: 6, killCost: 0.5, radius: 420, shieldSec: 0 },
+  F: { id: "F", boost: 22, boostSec: 4, minEffMass: 15, color: "#fff2b8", glow: "#ffe27a", kind: "orbiter", remnantName: "Guardian white dwarf", life: 12, killCost: 0.8, radius: 105, shieldSec: 0 },
+  G: { id: "G", boost: 3, boostSec: 3, minEffMass: 8.5, color: "#ffd84a", glow: "#ffb800", kind: "patroller", remnantName: "Patrol white dwarf", life: 11, killCost: 0.8, radius: 62, shieldSec: 0.6 },
+  K: { id: "K", boost: 1.5, boostSec: 2, minEffMass: 3.8, color: "#ffa24d", glow: "#ff7a1a", kind: "dwarf", remnantName: "Weak white dwarf", life: 6, killCost: 1.0, radius: 66, shieldSec: 1.0 },
+  M: { id: "M", boost: 0.4, boostSec: 1.5, minEffMass: 0, color: "#ff8f7a", glow: "#ff5a4a", kind: "none", remnantName: "No remnant", life: 0, killCost: 0, radius: 0, shieldSec: 1.8 },
 };
+
+// ---------------------------------------------------------------- distance
+/**
+ * Score = distance travelled. Speed = baseLsPerSec × (1 + softCap·tanh(Σboost / softCap)).
+ * Distance is measured in light-seconds on a GAME scale (not real physics).
+ */
+export const TRAVEL = {
+  baseLsPerSec: 25_000,
+  softCap: 400,
+} as const;
+
+export const LS_PER_LM = 60;
+export const LS_PER_LH = 3600;
+export const LS_PER_LD = 86_400;
+export const LS_PER_LY = 31_557_600;
 
 // ---------------------------------------------------------------- remnants
 export const MAX_REMNANTS = 3; // effects stack; the oldest fades when a 4th is made
@@ -170,7 +190,11 @@ export const LB = {
   nameMax: 16,
   maxDurationSec: 30 * 60,
   minDurationSec: 3,
-  maxScore: 6000,
+  /** Hard cap on a recomputed distance (light-seconds). */
+  maxDistance: 5e9,
+  /** Longest wall-clock gap between run start and submit. */
+  runTtlSec: 60 * 60 * 2,
+  startRateLimit: 60,
   maxDetonations: 400,
   /** Posts per IP per window. */
   rateLimit: 10,
@@ -178,4 +202,6 @@ export const LB = {
   /** Redis keys — NEW prefix, never shared with wooftag:* keys. */
   prefix: "qw:starform",
 } as const;
-export const TOP3_KEY = `${LB.prefix}:top3`;
+/** Distance board (the old points board `qw:starform:top3` is left untouched). */
+export const TOP3_KEY = `${LB.prefix}:top3:dist`;
+export const RUN_PREFIX = `${LB.prefix}:run:`;

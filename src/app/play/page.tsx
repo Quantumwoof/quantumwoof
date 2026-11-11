@@ -45,8 +45,8 @@ export default function PlayPage() {
           <h2 className="text-xl font-semibold text-white">Hosky Star Form</h2>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate">
             Collapse gas clouds into stars from O to M, leave black holes, neutron stars and white
-            dwarfs behind, and keep your three Hosky paws safe from passing stars, planets and rogue worlds. Chase the
-            all-time top 3.
+            dwarfs behind, and keep your three Hosky paws safe from passing stars, planets and rogue worlds. Travel
+            farther than anyone: the all-time top 3 is ranked by distance.
           </p>
           <Link
             href="/play/star-form"

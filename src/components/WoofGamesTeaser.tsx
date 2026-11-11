@@ -10,7 +10,7 @@ const games = [
   {
     href: "/play/star-form",
     title: "Hosky Star Form",
-    blurb: "Collapse gas clouds into stars O to M, dodge passing stars and planets, and chase the all-time top 3.",
+    blurb: "Collapse gas clouds into stars O to M, boost through the Milky Way, and go for the farthest distance.",
     tag: "Competitive",
   },
   {

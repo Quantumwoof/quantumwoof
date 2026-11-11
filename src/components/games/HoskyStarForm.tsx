@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { OBSTACLE_TEACH, STAR_FORM_INTRO, STAR_FORM_NOTE, STAR_FORM_TRAVEL, STAR_TEACH } from "@/content/starForm";
+import { DISTANCE_TEACH, OBSTACLE_TEACH, STAR_FORM_INTRO, STAR_FORM_NOTE, STAR_FORM_TRAVEL, STAR_TEACH } from "@/content/starForm";
 import {
   COMBO_STEPS,
   COMBO_WINDOW_SEC,
@@ -16,16 +16,19 @@ import {
   type SpectralId,
 } from "@/lib/starform/config";
 import { useHydrated } from "@/hooks/useHydrated";
+import { formatDistance } from "@/lib/starform/distance";
 import { StarForm, chainMultiplier } from "@/lib/starform/engine";
 import { applyEvents, createFx, draw, stepFx, type Fx } from "./starFormRender";
 
 type Phase = "intro" | "playing" | "over";
-type TopRow = { name: string; score: number; at: string };
+type TopRow = { name: string; distance: number; at: string };
 type Summary = ReturnType<StarForm["summary"]>;
 
 type Hud = {
   lives: number;
-  score: number;
+  /** Light-seconds travelled (game scale). */
+  distance: number;
+  speed: number;
   type: SpectralId;
   progress: number;
   chain: number; // next chain multiplier shown
@@ -33,11 +36,12 @@ type Hud = {
   canDet: boolean;
 };
 
-const BEST_KEY = "qw-starform-best";
+const BEST_KEY = "qw-starform-best-dist"; // light-seconds; the old points best used a different key
 const NAME_KEY = "qw-starform-name";
 const HELD_TAP_MS = 220;
 
 const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
+const fmtMul = (n: number) => (n >= 100 ? String(Math.round(n)) : n >= 10 ? n.toFixed(0) : n.toFixed(1));
 
 function randomSeed() {
   const a = new Uint32Array(1);
@@ -63,7 +67,7 @@ async function fetchBoard(): Promise<{ available: boolean; top: TopRow[] }> {
   }
 }
 
-const EMPTY_HUD: Hud = { lives: START_LIVES, score: 0, type: "M", progress: 0, chain: 1, chainLeft: 0, canDet: false };
+const EMPTY_HUD: Hud = { lives: START_LIVES, distance: 0, speed: 1, type: "M", progress: 0, chain: 1, chainLeft: 0, canDet: false };
 
 function Paws({ lives }: { lives: number }) {
   return (
@@ -77,28 +81,28 @@ function Paws({ lives }: { lives: number }) {
   );
 }
 
-function TopBoard({ top, available, highlightScore }: { top: TopRow[]; available: boolean; highlightScore?: number }) {
+function TopBoard({ top, available, highlightDistance }: { top: TopRow[]; available: boolean; highlightDistance?: number }) {
   return (
     <div className="rounded-xl border border-white/10 bg-black/30 p-3">
-      <p className="card-label mb-2 text-gold-dim">All-time top 3</p>
+      <p className="card-label mb-2 text-gold-dim">All-time top 3 · farthest</p>
       {!available ? (
         <p className="text-xs text-slate-muted">Global board is napping right now. Your best is saved on this device.</p>
       ) : top.length === 0 ? (
-        <p className="text-xs text-slate-muted">No scores yet — be the first Hosky pup on the board.</p>
+        <p className="text-xs text-slate-muted">No runs yet — be the first Hosky pup on the board.</p>
       ) : (
         <ol className="space-y-1">
           {top.map((r, i) => (
             <li
               key={`${r.name}-${r.at}-${i}`}
               className={`flex items-center justify-between gap-3 text-sm ${
-                highlightScore !== undefined && Math.round(highlightScore) === r.score ? "text-gold" : "text-slate"
+                highlightDistance !== undefined && highlightDistance === r.distance ? "text-gold" : "text-slate"
               }`}
             >
               <span className="truncate">
                 <span className="mr-2 font-mono text-slate-muted">{i + 1}.</span>
                 {r.name}
               </span>
-              <span className="font-mono text-white">{r.score}</span>
+              <span className="font-mono text-white">{formatDistance(r.distance).text}</span>
             </li>
           ))}
         </ol>
@@ -118,6 +122,8 @@ export function HoskyStarForm() {
   const compressRef = useRef({ held: false, latched: false, pressAt: 0 });
   const hudKeyRef = useRef("");
   const overAtRef = useRef<number | null>(null);
+  const hudAtRef = useRef(0);
+  const [runId, setRunId] = useState<string | null>(null);
 
   const [phase, setPhase] = useState<Phase>("intro");
   const [paused, setPaused] = useState(false);
@@ -193,15 +199,20 @@ export function HoskyStarForm() {
     const progress = idx === 0 ? 1 : Math.max(0, Math.min(1, (eff - cur) / (next - cur)));
     const h: Hud = {
       lives: g.lives,
-      score: g.score,
+      distance: g.distance,
+      speed: Math.round(g.speedNow() * 10) / 10,
       type: eff < DETONATE_MIN_EFF_MASS ? "M" : type,
       progress: Math.round(progress * 20) / 20,
       chain: chainMultiplier(g.nextChainIndex()),
       chainLeft: Math.round(g.chainLeft() * 10) / 10,
       canDet: g.canDetonate(),
     };
-    const key = JSON.stringify(h);
-    if (key !== hudKeyRef.current) {
+    const now = performance.now();
+    // distance ticks every frame — repaint the HUD about 12×/s, plus instantly on other changes
+    const key = JSON.stringify({ ...h, distance: 0, speed: 0 });
+    const fast = key !== hudKeyRef.current;
+    if (fast || now - hudAtRef.current > 80) {
+      hudAtRef.current = now;
       hudKeyRef.current = key;
       setHud(h);
     }
@@ -211,16 +222,16 @@ export function HoskyStarForm() {
     (g: StarForm) => {
       const s = g.summary();
       const prev = readBest();
-      const isBest = s.score > prev;
+      const isBest = s.distance > prev;
       if (isBest) {
         try {
-          localStorage.setItem(BEST_KEY, String(Math.round(s.score)));
+          localStorage.setItem(BEST_KEY, String(s.distance));
         } catch {
           /* ignore */
         }
       }
-      setBest(Math.max(prev, Math.round(s.score)));
-      setNewBest(isBest && s.score > 0);
+      setBest(Math.max(prev, s.distance));
+      setNewBest(isBest && s.detonations.length > 0);
       setSummary(s);
       setPost("idle");
       setPostMsg("");
@@ -256,6 +267,16 @@ export function HoskyStarForm() {
     setHud(EMPTY_HUD);
     setSummary(null);
     setPhase("playing");
+    // One-time run id lets the server confirm the run's length when posting to the board.
+    setRunId(null);
+    fetch("/api/starform/start", { method: "POST" })
+      .then((r) => r.json())
+      .then((d: { ok?: boolean; runId?: string }) => {
+        if (d.ok && typeof d.runId === "string") {
+          setRunId(d.runId);
+        }
+      })
+      .catch(() => {});
   }, [setCompress]);
 
   // ---- game loop
@@ -443,9 +464,10 @@ export function HoskyStarForm() {
   // ---- top 3 submit
   const qualifies =
     summary !== null &&
-    summary.score > 0 &&
+    summary.detonations.length > 0 &&
     boardOk &&
-    (top.length < LB.top || Math.round(summary.score) > (top[top.length - 1]?.score ?? 0));
+    runId !== null &&
+    (top.length < LB.top || summary.distance > (top[top.length - 1]?.distance ?? 0));
 
   const submitScore = async (e: FormEvent) => {
     e.preventDefault();
@@ -464,15 +486,16 @@ export function HoskyStarForm() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           name: clean,
-          score: summary.score,
-          durationSec: summary.durationSec,
+          runId,
+          steps: summary.steps,
           detonations: summary.detonations,
         }),
       });
       const data = (await res.json()) as { ok?: boolean; placed?: boolean; top?: TopRow[]; message?: string };
+      setRunId(null); // the run id is single use
       if (!res.ok || !data.ok) {
         setPost("error");
-        setPostMsg(data.message ?? "Could not post that score.");
+        setPostMsg(data.message ?? "Could not post that run.");
         return;
       }
       if (Array.isArray(data.top)) setTop(data.top);
@@ -481,7 +504,7 @@ export function HoskyStarForm() {
         setPostMsg("You're on the all-time board!");
       } else {
         setPost("lost");
-        setPostMsg("Someone just beat that score — the board stayed as it was.");
+        setPostMsg("Someone just went farther — the board stayed as it was.");
       }
     } catch {
       setPost("error");
@@ -500,13 +523,17 @@ export function HoskyStarForm() {
       {/* HUD */}
       <div className="mb-2 flex items-center justify-between gap-2">
         <Paws lives={phase === "playing" ? hud.lives : START_LIVES} />
-        <div className="text-center">
-          <p className="card-label leading-none">Score</p>
-          <p className="font-mono text-2xl font-semibold leading-tight text-white" data-testid="sf-score">
-            {Math.round(hud.score)}
+        <div className="min-w-0 text-center">
+          <p className="card-label leading-none">Distance</p>
+          <p className="font-mono text-xl font-semibold leading-tight text-white sm:text-2xl" data-testid="sf-distance">
+            {formatDistance(hud.distance).value}{" "}
+            <span className="text-xs font-medium text-electric-dim">{formatDistance(hud.distance).unit}</span>
+          </p>
+          <p className="font-mono text-[0.7rem] leading-none text-slate-muted" data-testid="sf-speed">
+            speed <span className={hud.speed > 1.5 ? "text-electric" : ""}>×{fmtMul(hud.speed)}</span>
           </p>
         </div>
-        <div className="w-24 text-right">
+        <div className="w-20 text-right">
           <p className="card-label leading-none">Chain</p>
           <p className="font-mono text-lg font-semibold leading-tight text-gold">×{hud.chain}</p>
           <div className="mt-0.5 h-1 w-full overflow-hidden rounded bg-white/10">
@@ -535,15 +562,15 @@ export function HoskyStarForm() {
               <p className="card-label text-lavender">New game</p>
               <h2 className="text-2xl font-semibold text-white">Hosky Star Form</h2>
               <p className="mt-1 text-sm text-slate">
-                Collapse smoky gas clouds into stars. Bigger stars score more and leave stronger remnants — but you are flying through a crowded galaxy, and the other stars will not make way.
+                Collapse smoky gas clouds into stars and ride the boost as far as you can. Bigger stars launch you faster and leave stronger remnants — but the other stars will not make way.
               </p>
             </div>
             <ul className="space-y-1.5 text-sm text-slate">
-              <li><span className="text-electric">Drag</span> to steer your gas cloud and swallow the glowing smoke wisps. Gas is always safe.</li>
-              <li><span className="text-electric">Hold</span> COMPRESS (or tap to toggle) to pack mass in and keep it — but you move slower. A loose cloud slowly leaks mass, and a bigger cloud needs more gas to grow.</li>
-              <li><span className="text-gold">DETONATE</span> any time to bank the star and leave a remnant that destroys hazards. A new cloud starts instantly.</li>
-              <li>Chain detonations within {COMBO_WINDOW_SEC}s for up to ×{COMBO_STEPS[COMBO_STEPS.length - 1]}. Small stars (M, K, G) also grant a short shield.</li>
-              <li>You are travelling through the Milky Way. <span className="text-rose-300">Red-ringed</span> stars, their planets, rogue stars and runaway stars all cost a Hosky paw 🐾. Lose all {START_LIVES} and the run ends.</li>
+              <li>You cruise through the Milky Way and <span className="text-electric">distance</span> is your score. It rolls up from light-seconds to light-years (a <em>game scale</em>, not real physics).</li>
+              <li><span className="text-electric">Drag</span> to steer your gas cloud and swallow the smoke wisps. Gas is always safe. <span className="text-electric">Hold</span> COMPRESS (or tap to toggle) to pack mass in — a loose cloud slowly leaks it, and a bigger cloud needs more gas to grow.</li>
+              <li><span className="text-gold">DETONATE</span> to make a star: it gives a <span className="text-gold">speed boost</span> that fades over a few seconds — bigger stars boost far more — and leaves a remnant that destroys hazards.</li>
+              <li>Chain detonations within {COMBO_WINDOW_SEC}s to scale the boost up to ×{COMBO_STEPS[COMBO_STEPS.length - 1]}. Small stars (M, K, G) also grant a short shield.</li>
+              <li><span className="text-rose-300">Red-ringed</span> stars, their planets, rogue stars and runaway stars cost a Hosky paw 🐾. Lose all {START_LIVES} and the run ends — survive, boost, go farthest.</li>
             </ul>
             <TopBoard top={top} available={boardOk} />
             <div className="sticky bottom-0 -mx-4 -mb-4 mt-auto flex items-center justify-between gap-3 bg-navy px-4 py-3">
@@ -575,44 +602,42 @@ export function HoskyStarForm() {
         {phase === "over" && summary && (
           <div className="absolute inset-0 flex flex-col gap-3 overflow-y-auto bg-navy/90 p-4 backdrop-blur-sm" data-testid="sf-over">
             <div className="flex items-end justify-between gap-3">
-              <div>
+              <div className="shrink-0">
                 <p className="card-label text-lavender">Run over</p>
-                <p className="font-mono text-4xl font-semibold text-white">{Math.round(summary.score)}</p>
+                <p className="font-mono text-3xl font-semibold leading-tight text-white" data-testid="sf-final">
+                  {formatDistance(summary.distance).value}
+                  <span className="ml-1.5 whitespace-nowrap text-sm font-medium text-electric-dim">{formatDistance(summary.distance).unit}</span>
+                </p>
               </div>
-              <p className="pb-1 text-right text-xs text-slate-muted">
-                {newBest ? <span className="text-gold">New personal best!</span> : <>Best: <span className="font-mono text-white">{best}</span></>}
+              <p className="min-w-0 shrink pb-1 text-right text-xs text-slate-muted">
+                {newBest ? <span className="text-gold">New personal best!</span> : <>Best: <span className="font-mono text-white">{formatDistance(best).text}</span></>}
                 <br />
-                {Math.round(summary.durationSec)}s · {summary.kills} hazards destroyed
+                {Math.round(summary.durationSec)}s · {summary.detonations.length} stars made · {summary.kills} hazards destroyed
               </p>
             </div>
 
             <div className="rounded-xl border border-white/10 bg-black/30 p-3">
-              <p className="card-label mb-2">Score breakdown</p>
+              <p className="card-label mb-2">Stars made</p>
               {summary.detonations.length === 0 ? (
-                <p className="text-xs text-slate-muted">No stars detonated — next time, bank a star before the hazards get you.</p>
+                <p className="text-xs text-slate-muted">No stars made — cruise speed only. Detonate a star for a speed boost next time.</p>
               ) : (
                 <table className="w-full text-sm">
                   <tbody>
-                    {SPECTRAL_ORDER.filter((k) => summary.counts[k] > 0).map((k) => {
-                      const base = summary.counts[k] * SPECTRAL[k].points;
-                      const actual = summary.detonations.reduce((s, d) => (d.k === k ? s + SPECTRAL[k].points * chainMultiplier(d.m) : s), 0);
-                      return (
-                        <tr key={k} className="text-slate">
-                          <td className="py-0.5">
-                            <span className="font-mono font-semibold" style={{ color: SPECTRAL[k].color }}>{k}</span>{" "}
-                            <span className="text-slate-muted">× {summary.counts[k]}</span>
-                          </td>
-                          <td className="py-0.5 text-right font-mono">{fmt(base)}</td>
-                          <td className="py-0.5 text-right font-mono text-gold">{actual > base ? `+${fmt(actual - base)} chain` : ""}</td>
-                          <td className="py-0.5 text-right font-mono text-white">{fmt(actual)}</td>
-                        </tr>
-                      );
-                    })}
+                    {SPECTRAL_ORDER.filter((k) => summary.counts[k] > 0).map((k) => (
+                      <tr key={k} className="text-slate">
+                        <td className="py-0.5">
+                          <span className="font-mono font-semibold" style={{ color: SPECTRAL[k].color }}>{k}</span>{" "}
+                          <span className="text-slate-muted">{STAR_TEACH[k].name}</span>
+                        </td>
+                        <td className="py-0.5 text-right font-mono text-white">× {summary.counts[k]}</td>
+                        <td className="py-0.5 text-right font-mono text-gold">boost ×{fmt(SPECTRAL[k].boost)}</td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               )}
               {summary.bestChain > 1 && (
-                <p className="mt-1 text-xs text-slate-muted">Best chain: ×{chainMultiplier(summary.bestChain - 1)}</p>
+                <p className="mt-1 text-xs text-slate-muted">Best chain: ×{chainMultiplier(summary.bestChain - 1)} (scales the boost)</p>
               )}
             </div>
 
@@ -623,11 +648,11 @@ export function HoskyStarForm() {
               </p>
             )}
 
-            <TopBoard top={top} available={boardOk} highlightScore={post === "done" ? summary.score : undefined} />
+            <TopBoard top={top} available={boardOk} highlightDistance={post === "done" ? summary.distance : undefined} />
 
             {qualifies && post !== "done" && post !== "lost" && (
               <form onSubmit={submitScore} className="rounded-xl border border-gold/40 bg-gold/[0.06] p-3" data-testid="sf-name-form">
-                <p className="text-sm font-semibold text-gold">That score makes the all-time top 3!</p>
+                <p className="text-sm font-semibold text-gold">That run makes the all-time top 3!</p>
                 <div className="mt-2 flex gap-2">
                   <input
                     value={name}
@@ -667,7 +692,7 @@ export function HoskyStarForm() {
         <p className="text-slate-muted">
           Growing: <span className="font-mono font-semibold" style={{ color: typeSpec.color }}>{phase === "playing" ? hud.type : "–"}</span>
           {phase === "playing" && (
-            <span> · {STAR_TEACH[hud.type].name} · {typeSpec.points} pts · {typeSpec.remnantName}</span>
+            <span> · {STAR_TEACH[hud.type].name} · boost ×{fmt(typeSpec.boost)} · {typeSpec.remnantName}</span>
           )}
         </p>
         {phase === "playing" && (
@@ -716,7 +741,7 @@ export function HoskyStarForm() {
         >
           Detonate
           <span className="mt-0.5 block text-[0.65rem] font-medium normal-case tracking-normal text-slate-muted">
-            {hud.canDet ? `bank ${hud.type} · +${fmt(typeSpec.points * hud.chain)}` : "gather more gas"}
+            {hud.canDet ? `make ${hud.type} · boost ×${fmt(typeSpec.boost * hud.chain)}` : "gather more gas"}
           </span>
         </button>
       </div>
@@ -733,7 +758,7 @@ export function HoskyStarForm() {
               <p className="flex flex-wrap items-center gap-2">
                 <span className="rounded-md px-2 py-0.5 font-mono text-sm font-bold text-navy" style={{ background: SPECTRAL[k].color }}>{k}</span>
                 <span className="font-semibold text-white">{STAR_TEACH[k].name}</span>
-                <span className="text-slate-muted">{fmt(SPECTRAL[k].points)} pts · in game: {SPECTRAL[k].remnantName}</span>
+                <span className="text-slate-muted">boost ×{fmt(SPECTRAL[k].boost)} · in game: {SPECTRAL[k].remnantName}</span>
               </p>
               <p className="mt-1">{STAR_TEACH[k].fact}</p>
               <p className="mt-0.5 text-slate-muted">{STAR_TEACH[k].remnant}</p>
@@ -741,6 +766,16 @@ export function HoskyStarForm() {
           ))}
         </ul>
         <p className="mt-3 text-xs text-slate-muted">{STAR_FORM_NOTE}</p>
+
+        <h3 className="mt-5 text-sm font-semibold text-white">Light units: how far is far?</h3>
+        <p className="mt-1 text-xs leading-relaxed text-slate">{DISTANCE_TEACH.intro}</p>
+        <ul className="mt-2 space-y-1.5">
+          {DISTANCE_TEACH.units.map((u) => (
+            <li key={u.unit} className="rounded-xl border border-electric/15 bg-black/20 px-3 py-2 text-xs leading-relaxed text-slate">
+              <span className="font-semibold text-white">{u.unit}</span> — {u.fact}
+            </li>
+          ))}
+        </ul>
 
         <h3 className="mt-5 text-sm font-semibold text-white">What you are flying through</h3>
         <p className="mt-1 text-xs leading-relaxed text-slate">{STAR_FORM_TRAVEL}</p>

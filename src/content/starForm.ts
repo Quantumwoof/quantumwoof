@@ -45,7 +45,19 @@ export const STAR_FORM_INTRO = [
 ] as const;
 
 export const STAR_FORM_NOTE =
-  "In the game, “mass” is a stylised score for the cloud, not real solar masses — but the order and the remnants follow real astronomy.";
+  "In the game, “mass” is a stylised number for the cloud, not real solar masses, and boosts and speeds are made up so a run feels exciting — but the order of the stars and the remnants they leave follow real astronomy.";
+
+export const DISTANCE_TEACH = {
+  intro:
+    "Astronomers measure huge distances by the time light takes to cross them. Light is the fastest thing there is, and the distances in this game roll up through the same units. The speeds are a game scale, not real physics — nothing real travels this fast.",
+  units: [
+    { unit: "Light-second", fact: "about 300,000 km — roughly the distance from Earth to the Moon is 1.3 of them." },
+    { unit: "Light-minute", fact: "sunlight takes about 8.3 light-minutes to reach Earth." },
+    { unit: "Light-hour", fact: "Neptune, the farthest planet, is roughly 4 light-hours from the Sun." },
+    { unit: "Light-day", fact: "the Voyager 1 probe, launched in 1977, is only now approaching one light-day from Earth." },
+    { unit: "Light-year", fact: "about 9.5 trillion km. The nearest star beyond the Sun, Proxima Centauri, is 4.2 light-years away, and the Milky Way is around 100,000 light-years across." },
+  ],
+} as const;
 
 /** What the red-ringed hazards are, in real astronomy terms. */
 export const OBSTACLE_TEACH = [
@@ -67,4 +79,4 @@ export const OBSTACLE_TEACH = [
 ] as const;
 
 export const STAR_FORM_TRAVEL =
-  "You are flying through a spiral arm of the Milky Way, our galaxy of a few hundred billion stars. The pale band behind you is the combined glow of countless distant stars and dark dust lanes.";
+  "You are cruising through a spiral arm of the Milky Way, our galaxy of a few hundred billion stars. The pale band behind you is the combined glow of countless distant stars and dark dust lanes.";
