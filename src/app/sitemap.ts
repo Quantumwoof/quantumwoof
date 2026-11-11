@@ -21,6 +21,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
       .filter((t) => t.status === "ready")
       .map((t) => page(`/school/${t.slug}`, 0.7)),
     page("/play", 0.6),
+    page("/play/star-form", 0.5),
     page("/notes", 0.6),
     ...notes.map((n) => page(`/notes/${n.slug}`, 0.5, "monthly", n.date)),
     page("/privacy", 0.2, "yearly"),

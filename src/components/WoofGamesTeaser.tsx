@@ -8,6 +8,12 @@ const games = [
     tag: "Focus",
   },
   {
+    href: "/play/star-form",
+    title: "Hosky Star Form",
+    blurb: "Collapse gas clouds into stars O to M, dodge red spikes, and chase the all-time top 3.",
+    tag: "Competitive",
+  },
+  {
     href: "/play#photon",
     title: "Fetch the photon",
     blurb: "Short timing rounds. Catch the rising blip — no arcade cacophony.",

@@ -38,6 +38,17 @@ export default function SchoolCampusPage() {
       <CampusProgress />
       <SnifferCertificate />
 
+      <aside className="rounded-2xl border border-gold/30 bg-gold/[0.05] p-4">
+        <p className="card-label text-gold-dim">Recess game</p>
+        <p className="mt-1 text-sm text-slate">
+          Learn how stars form by playing it —{" "}
+          <Link href="/play/star-form" className="text-gold hover:underline">
+            Hosky Star Form
+          </Link>
+          : collapse gas into O to M stars and survive the spikes.
+        </p>
+      </aside>
+
       <section id="campus-map">
         <div className="mb-3 flex items-end justify-between gap-3">
           <h2 className="text-lg font-semibold text-white">Campus map</h2>
