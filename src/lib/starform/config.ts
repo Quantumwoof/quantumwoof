@@ -19,10 +19,10 @@ export const NEW_CLOUD_GRACE_SEC = 0.6;
 // ---------------------------------------------------------------- cloud
 export const CLOUD = {
   baseRadius: 22,
-  radiusPerSqrtMass: 7.5,
-  maxMass: 24,
+  radiusPerSqrtMass: 5.5,
+  maxMass: 60,
   /** Free trickle of mass so a cloud always grows a little (per second). */
-  passiveMassPerSec: 0.05,
+  passiveMassPerSec: 0.03,
   maxSpeed: 560, // world units / s toward the drag target
   compressSpeedMul: 0.6, // compressing makes the cloud heavy
   compressRiseSec: 1.4, // 0 → 1 while held
@@ -30,11 +30,18 @@ export const CLOUD = {
   compressHitboxShrink: 0.3, // hitbox shrinks by up to 30%
   compressCatchShrink: 0.38, // gas pickup range shrinks by up to 38%
   compressMassBoost: 0.6, // effective mass ×(1 + 0.6·compression)
+  /**
+   * Diminishing gas: each puff adds GAS.mass / (1 + mass / diminishMass), so the
+   * bigger the cloud, the more gas it takes to grow further.
+   */
+  diminishMass: 10,
+  /** Share of mass lost per second while NOT compressing (scaled by 1 - compression). */
+  decayPerSec: 0.015,
   catchMul: 2.0,
   catchPad: 18,
 } as const;
 
-export const DETONATE_MIN_EFF_MASS = 1.4;
+export const DETONATE_MIN_EFF_MASS = 1.5;
 export const DETONATE_COOLDOWN_SEC = 0.35;
 /** Every detonation also pops a small free blast (radius = base + perRank·rank). */
 export const BLAST = { base: 55, perRank: 9 } as const;
@@ -78,12 +85,12 @@ export type SpectralSpec = {
 };
 
 export const SPECTRAL: Record<SpectralId, SpectralSpec> = {
-  O: { id: "O", points: 15, minEffMass: 10.6, color: "#6fa8ff", glow: "#3b6dff", kind: "blackhole", remnantName: "Black hole", life: 15, killCost: 0.45, radius: 200, shieldSec: 0 },
-  B: { id: "B", points: 12.5, minEffMass: 8.8, color: "#a8d8ff", glow: "#5fb4ff", kind: "neutron", remnantName: "Neutron star", life: 13, killCost: 0.7, radius: 170, shieldSec: 0 },
-  A: { id: "A", points: 10, minEffMass: 7.0, color: "#f2f6ff", glow: "#b9c8ff", kind: "dwarf-clear", remnantName: "White dwarf + shell", life: 6, killCost: 0.5, radius: 420, shieldSec: 0 },
-  F: { id: "F", points: 8, minEffMass: 5.6, color: "#fff2b8", glow: "#ffe27a", kind: "orbiter", remnantName: "Guardian white dwarf", life: 12, killCost: 0.8, radius: 105, shieldSec: 0 },
-  G: { id: "G", points: 6, minEffMass: 4.2, color: "#ffd84a", glow: "#ffb800", kind: "patroller", remnantName: "Patrol white dwarf", life: 11, killCost: 0.8, radius: 62, shieldSec: 0.6 },
-  K: { id: "K", points: 4, minEffMass: 2.8, color: "#ffa24d", glow: "#ff7a1a", kind: "dwarf", remnantName: "Weak white dwarf", life: 6, killCost: 1.0, radius: 66, shieldSec: 1.0 },
+  O: { id: "O", points: 15, minEffMass: 58, color: "#6fa8ff", glow: "#3b6dff", kind: "blackhole", remnantName: "Black hole", life: 15, killCost: 0.45, radius: 200, shieldSec: 0 },
+  B: { id: "B", points: 12.5, minEffMass: 41, color: "#a8d8ff", glow: "#5fb4ff", kind: "neutron", remnantName: "Neutron star", life: 13, killCost: 0.7, radius: 170, shieldSec: 0 },
+  A: { id: "A", points: 10, minEffMass: 27, color: "#f2f6ff", glow: "#b9c8ff", kind: "dwarf-clear", remnantName: "White dwarf + shell", life: 6, killCost: 0.5, radius: 420, shieldSec: 0 },
+  F: { id: "F", points: 8, minEffMass: 15, color: "#fff2b8", glow: "#ffe27a", kind: "orbiter", remnantName: "Guardian white dwarf", life: 12, killCost: 0.8, radius: 105, shieldSec: 0 },
+  G: { id: "G", points: 6, minEffMass: 8.5, color: "#ffd84a", glow: "#ffb800", kind: "patroller", remnantName: "Patrol white dwarf", life: 11, killCost: 0.8, radius: 62, shieldSec: 0.6 },
+  K: { id: "K", points: 4, minEffMass: 3.8, color: "#ffa24d", glow: "#ff7a1a", kind: "dwarf", remnantName: "Weak white dwarf", life: 6, killCost: 1.0, radius: 66, shieldSec: 1.0 },
   M: { id: "M", points: 2, minEffMass: 0, color: "#ff8f7a", glow: "#ff5a4a", kind: "none", remnantName: "No remnant", life: 0, killCost: 0, radius: 0, shieldSec: 1.8 },
 };
 
@@ -115,17 +122,46 @@ export const COMBO_STEPS = [1, 1.25, 1.5, 1.75, 2] as const;
 // ---------------------------------------------------------------- obstacles
 export type ObstacleKind = "drifter" | "chaser" | "dart";
 
+/** Star palette for obstacle stars (index chosen from the seed). */
+export const OBSTACLE_STARS = [
+  { name: "red dwarf", color: "#ff7a5a", glow: "#ff3d2e" },
+  { name: "orange dwarf", color: "#ffb25a", glow: "#ff8a1a" },
+  { name: "yellow star", color: "#ffe680", glow: "#ffc21a" },
+  { name: "white star", color: "#f4f8ff", glow: "#9fb8ff" },
+  { name: "blue star", color: "#9fd0ff", glow: "#4f8dff" },
+] as const;
+
 export const OBSTACLE = {
-  drifter: { radius: 24, speed: 62, unlockSec: 0 },
-  chaser: { radius: 19, speed: 82, turn: 1.7, unlockSec: 18, lifeSec: 13 },
-  dart: { radius: 14, speed: 430, unlockSec: 38, warnSec: 0.9 },
+  /** Star with 1-3 orbiting planets. Star and planets all hurt. */
+  drifter: {
+    radius: 22,
+    speed: 62,
+    unlockSec: 0,
+    planetOrbit: [42, 78] as readonly [number, number],
+    planetRadius: [8, 13] as readonly [number, number],
+    planetSpin: [1.1, 2.3] as readonly [number, number],
+    /** Cumulative chance of 1 / 2 / 3 planets. */
+    planetOdds: [0.5, 0.85, 1] as readonly number[],
+  },
+  /** Rogue star pulled toward you. */
+  chaser: { radius: 18, speed: 82, turn: 1.7, unlockSec: 18, lifeSec: 13 },
+  /** Runaway star or rogue planet, telegraphed, very fast. */
+  dart: { radius: 13, speed: 430, unlockSec: 38, warnSec: 0.9 },
   /** Spawn interval (s) eases from `start` to `min` over `rampSec`. */
   spawn: { start: 2.6, min: 0.5, rampSec: 210 },
   /** Obstacle speed multiplier grows from 1 to `maxMul` over `rampSec`. */
   speedMul: { maxMul: 2.4, rampSec: 220 },
   maxOnField: 30,
   margin: 70,
+  /** Hit circles count at this share of their drawn radius (1 = what you see). */
+  hitShare: 0.92,
 } as const;
+
+/** Lowest raw gas (mass units) that could have built a cloud of this effective mass. */
+export function minRawGasFor(effMass: number): number {
+  const m = effMass / (1 + CLOUD.compressMassBoost); // best case: fully compressed
+  return m + (m * m) / (2 * CLOUD.diminishMass);
+}
 
 // ---------------------------------------------------------------- all-time top 3 / validation
 export const LB = {

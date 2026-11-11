@@ -18,6 +18,7 @@ import {
   MAX_REMNANTS,
   NEW_CLOUD_GRACE_SEC,
   OBSTACLE,
+  OBSTACLE_STARS,
   REMNANT,
   SPECTRAL,
   SPECTRAL_ORDER,
@@ -46,9 +47,16 @@ export type Input = { tx: number; ty: number; compress: boolean };
 
 export type Cloud = { x: number; y: number; mass: number; comp: number; invuln: number };
 export type Gas = { id: number; x: number; y: number; vx: number; vy: number; age: number; pulled: boolean };
+export type Planet = { orbit: number; r: number; phase: number; speed: number; ring: boolean };
+/** One circle of an obstacle that can hurt (star body or planet). */
+export type HitPart = { x: number; y: number; r: number; planet: boolean };
 export type Obstacle = {
   id: number;
   kind: ObstacleKind;
+  /** Palette: index into OBSTACLE_STARS (drifter/chaser/runaway star) or rogue-planet look for darts. */
+  style: number;
+  /** Drifters: orbiting planets (they hit too). */
+  planets: Planet[];
   x: number;
   y: number;
   vx: number;
@@ -112,6 +120,22 @@ function segDist(px: number, py: number, ax: number, ay: number, bx: number, by:
   const l2 = abx * abx + aby * aby || 1;
   const t = clamp(((px - ax) * abx + (py - ay) * aby) / l2, 0, 1);
   return Math.hypot(px - (ax + abx * t), py - (ay + aby * t));
+}
+
+/** All hurtful circles of an obstacle at its current age. */
+export function partsOf(o: Obstacle): HitPart[] {
+  const parts: HitPart[] = [{ x: o.x, y: o.y, r: o.r, planet: false }];
+  for (const p of o.planets) {
+    const a = p.phase + o.age * p.speed;
+    parts.push({ x: o.x + Math.cos(a) * p.orbit, y: o.y + Math.sin(a) * p.orbit, r: p.r, planet: true });
+  }
+  return parts;
+}
+
+/** True if any part of the obstacle satisfies `test(part)`. */
+function anyPart(o: Obstacle, test: (p: HitPart) => boolean): boolean {
+  for (const p of partsOf(o)) if (test(p)) return true;
+  return false;
 }
 
 export class StarForm {
@@ -205,6 +229,9 @@ export class StarForm {
     const aimY = WORLD_H * (0.25 + 0.5 * r());
     const speedJit = 0.8 + 0.4 * r();
     const phase = r() * Math.PI * 2;
+    const styleRoll = r();
+    const countRoll = r();
+    const planetDraws = [0, 1, 2].map(() => ({ a: r(), b: r(), c: r(), d: r(), e: r(), f: r() }));
 
     const wDrift = 1;
     const wChase = t >= OBSTACLE.chaser.unlockSec ? 0.7 * clamp((t - OBSTACLE.chaser.unlockSec) / 60, 0.15, 1) : 0;
@@ -212,6 +239,32 @@ export class StarForm {
     const total = wDrift + wChase + wDart;
     const roll = pickKind * total;
     const kind: ObstacleKind = roll < wDrift ? "drifter" : roll < wDrift + wChase ? "chaser" : "dart";
+
+    const planets: Planet[] = [];
+    let style = Math.floor(styleRoll * OBSTACLE_STARS.length);
+    if (kind === "drifter") {
+      const odds = OBSTACLE.drifter.planetOdds;
+      const n = countRoll < odds[0] ? 1 : countRoll < odds[1] ? 2 : 3;
+      const [o0, o1] = OBSTACLE.drifter.planetOrbit;
+      const [r0, r1] = OBSTACLE.drifter.planetRadius;
+      const [s0, s1] = OBSTACLE.drifter.planetSpin;
+      for (let i = 0; i < n; i++) {
+        const d = planetDraws[i];
+        // spread orbits so planets never share a lane
+        const lane = (i + d.a * 0.8) / 3;
+        planets.push({
+          orbit: o0 + (o1 - o0) * lane,
+          r: r0 + (r1 - r0) * d.b,
+          phase: d.c * Math.PI * 2,
+          speed: (s0 + (s1 - s0) * d.d) * (d.e < 0.5 ? -1 : 1),
+          ring: d.f < 0.25,
+        });
+      }
+    } else if (kind === "chaser") {
+      style = style % 3; // warm rogue stars: red / orange / yellow
+    } else {
+      style = styleRoll < 0.5 ? 0 : 1; // 0 = runaway star, 1 = rogue planet
+    }
 
     if (this.obstacles.length >= OBSTACLE.maxOnField) return;
 
@@ -229,6 +282,8 @@ export class StarForm {
     const o: Obstacle = {
       id: this.nid++,
       kind,
+      style,
+      planets,
       x,
       y,
       vx: Math.cos(heading) * sp,
@@ -284,7 +339,7 @@ export class StarForm {
     const blast = BLAST.base + BLAST.perRank * rank;
     for (const o of [...this.obstacles]) {
       if (o.warn > 0) continue;
-      if (Math.hypot(o.x - c.x, o.y - c.y) < blast + o.r) this.killObstacle(o, "blast");
+      if (anyPart(o, (p) => Math.hypot(p.x - c.x, p.y - c.y) < blast + p.r)) this.killObstacle(o, "blast");
     }
 
     if (spec.kind !== "none") {
@@ -304,7 +359,7 @@ export class StarForm {
       if (spec.kind === "dwarf-clear") {
         for (const o of [...this.obstacles]) {
           if (o.warn > 0) continue;
-          if (Math.hypot(o.x - c.x, o.y - c.y) < spec.radius + o.r) this.killObstacle(o, type);
+          if (anyPart(o, (p) => Math.hypot(p.x - c.x, p.y - c.y) < spec.radius + p.r)) this.killObstacle(o, type);
         }
       }
       const live = this.remnants.filter((r) => r.fade <= 0);
@@ -348,6 +403,8 @@ export class StarForm {
     c.x = clamp(c.x, rad, WORLD_W - rad);
     c.y = clamp(c.y, rad, WORLD_H - rad);
 
+    // slow decay unless compressing; tiny free trickle so a cloud always grows a bit
+    c.mass = Math.max(0, c.mass - c.mass * CLOUD.decayPerSec * (1 - c.comp) * dt);
     c.mass = Math.min(CLOUD.maxMass, c.mass + CLOUD.passiveMassPerSec * dt);
 
     // gas (never harmful)
@@ -367,7 +424,7 @@ export class StarForm {
         g.y += ((c.y - g.y) / (gd || 1)) * k;
         if (gd < rad * 0.8 + 4) {
           this.gas.splice(this.gas.indexOf(g), 1);
-          c.mass = Math.min(CLOUD.maxMass, c.mass + GAS.mass);
+          c.mass = Math.min(CLOUD.maxMass, c.mass + GAS.mass / (1 + c.mass / CLOUD.diminishMass));
           this.events.push({ e: "gas", x: g.x, y: g.y });
           continue;
         }
@@ -431,13 +488,20 @@ export class StarForm {
       const hr = this.hitRadius();
       for (const o of this.obstacles) {
         if (o.warn > 0) continue;
-        if (Math.hypot(o.x - c.x, o.y - c.y) < hr + o.r * 0.85) {
+        let hitAt: HitPart | null = null;
+        for (const p of partsOf(o)) {
+          if (Math.hypot(p.x - c.x, p.y - c.y) < hr + p.r * OBSTACLE.hitShare) {
+            hitAt = p;
+            break;
+          }
+        }
+        if (hitAt) {
           this.lives--;
           this.lastLost = this.t;
           c.invuln = HIT_INVULN_SEC;
           c.mass *= HIT_MASS_KEEP;
           c.comp = 0;
-          this.events.push({ e: "hit", x: o.x, y: o.y });
+          this.events.push({ e: "hit", x: hitAt.x, y: hitAt.y });
           this.killObstacle(o, "blast");
           if (this.lives <= 0) {
             this.ended = true;
@@ -480,7 +544,7 @@ export class StarForm {
               o.x += ((r.x - o.x) / (d || 1)) * f;
               o.y += ((r.y - o.y) / (d || 1)) * f;
             }
-            if (d < core + o.r * 0.6) hit(o);
+            if (anyPart(o, (p) => Math.hypot(p.x - r.x, p.y - r.y) < core + p.r * 0.6)) hit(o);
           }
           break;
         }
@@ -488,13 +552,16 @@ export class StarForm {
           const q = REMNANT.neutron;
           r.angle += q.spin * dt;
           for (const o of live()) {
-            let touched = Math.hypot(o.x - r.x, o.y - r.y) < 30 + o.r;
-            for (let i = 0; i < q.beams * 2 && !touched; i++) {
-              const a = r.angle + (i * Math.PI) / q.beams;
-              const ex = r.x + Math.cos(a) * q.beamLen;
-              const ey = r.y + Math.sin(a) * q.beamLen;
-              if (segDist(o.x, o.y, r.x, r.y, ex, ey) < q.beamWidth / 2 + o.r) touched = true;
-            }
+            const touched = anyPart(o, (p) => {
+              if (Math.hypot(p.x - r.x, p.y - r.y) < 30 + p.r) return true;
+              for (let i = 0; i < q.beams * 2; i++) {
+                const a = r.angle + (i * Math.PI) / q.beams;
+                const ex = r.x + Math.cos(a) * q.beamLen;
+                const ey = r.y + Math.sin(a) * q.beamLen;
+                if (segDist(p.x, p.y, r.x, r.y, ex, ey) < q.beamWidth / 2 + p.r) return true;
+              }
+              return false;
+            });
             if (touched) hit(o);
           }
           break;
@@ -502,7 +569,7 @@ export class StarForm {
         case "dwarf-clear": {
           r.shell = Math.min(1, r.shell + dt / 0.7);
           for (const o of live()) {
-            if (Math.hypot(o.x - r.x, o.y - r.y) < REMNANT.clear.auraRadius + o.r) hit(o);
+            if (anyPart(o, (p) => Math.hypot(p.x - r.x, p.y - r.y) < REMNANT.clear.auraRadius + p.r)) hit(o);
           }
           break;
         }
@@ -511,16 +578,18 @@ export class StarForm {
           r.angle += q.spin * dt;
           r.x = c.x;
           r.y = c.y;
+          const orbit = q.orbit + this.radius() * 0.5;
           for (const o of live()) {
-            for (let i = 0; i < q.bodies; i++) {
-              const a = r.angle + (i * Math.PI * 2) / q.bodies;
-              const bx = r.x + Math.cos(a) * (q.orbit + this.radius() * 0.5);
-              const by = r.y + Math.sin(a) * (q.orbit + this.radius() * 0.5);
-              if (Math.hypot(o.x - bx, o.y - by) < q.bodyRadius + o.r) {
-                hit(o);
-                break;
+            const touched = anyPart(o, (p) => {
+              for (let i = 0; i < q.bodies; i++) {
+                const a = r.angle + (i * Math.PI * 2) / q.bodies;
+                const bx = r.x + Math.cos(a) * orbit;
+                const by = r.y + Math.sin(a) * orbit;
+                if (Math.hypot(p.x - bx, p.y - by) < q.bodyRadius + p.r) return true;
               }
-            }
+              return false;
+            });
+            if (touched) hit(o);
           }
           break;
         }
@@ -545,13 +614,13 @@ export class StarForm {
           }
           r.angle += 2 * dt;
           for (const o of live()) {
-            if (Math.hypot(o.x - r.x, o.y - r.y) < q.quench + o.r) hit(o);
+            if (anyPart(o, (p) => Math.hypot(p.x - r.x, p.y - r.y) < q.quench + p.r)) hit(o);
           }
           break;
         }
         case "dwarf": {
           for (const o of live()) {
-            if (Math.hypot(o.x - r.x, o.y - r.y) < spec.radius + o.r) hit(o);
+            if (anyPart(o, (p) => Math.hypot(p.x - r.x, p.y - r.y) < spec.radius + p.r)) hit(o);
           }
           break;
         }

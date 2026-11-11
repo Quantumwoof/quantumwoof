@@ -46,3 +46,25 @@ export const STAR_FORM_INTRO = [
 
 export const STAR_FORM_NOTE =
   "In the game, “mass” is a stylised score for the cloud, not real solar masses — but the order and the remnants follow real astronomy.";
+
+/** What the red-ringed hazards are, in real astronomy terms. */
+export const OBSTACLE_TEACH = [
+  {
+    name: "Stars with planets",
+    game: "Drifters",
+    fact: "Most stars have planets. Here a star drifts by with 1–3 planets orbiting it — the star and every planet can hurt you.",
+  },
+  {
+    name: "Rogue stars",
+    game: "Chasers",
+    fact: "Stars passing close to each other tug on one another through gravity. This one is pulled toward your cloud and homes in for a while before it drifts off.",
+  },
+  {
+    name: "Runaway stars and rogue planets",
+    game: "Darts",
+    fact: "Supernova blasts and close encounters can fling a star out of its home at over 100 km/s, and free-floating rogue planets drift between the stars with no sun at all. A red warning line shows where they will streak through.",
+  },
+] as const;
+
+export const STAR_FORM_TRAVEL =
+  "You are flying through a spiral arm of the Milky Way, our galaxy of a few hundred billion stars. The pale band behind you is the combined glow of countless distant stars and dark dust lanes.";

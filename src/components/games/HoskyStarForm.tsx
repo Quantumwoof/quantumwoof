@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { STAR_FORM_INTRO, STAR_FORM_NOTE, STAR_TEACH } from "@/content/starForm";
+import { OBSTACLE_TEACH, STAR_FORM_INTRO, STAR_FORM_NOTE, STAR_FORM_TRAVEL, STAR_TEACH } from "@/content/starForm";
 import {
   COMBO_STEPS,
   COMBO_WINDOW_SEC,
@@ -292,7 +292,7 @@ export function HoskyStarForm() {
           g.input.compress = cr.held || cr.latched;
           g.step();
           applyEvents(fx, g.drain());
-          stepFx(fx, STEP);
+          stepFx(fx, STEP, g);
           if (g.ended && overAtRef.current === null) overAtRef.current = now;
           if (g.ended) break;
         }
@@ -535,16 +535,15 @@ export function HoskyStarForm() {
               <p className="card-label text-lavender">New game</p>
               <h2 className="text-2xl font-semibold text-white">Hosky Star Form</h2>
               <p className="mt-1 text-sm text-slate">
-                Collapse gas clouds into stars. Bigger stars score more and leave stronger remnants — but the red
-                spikes keep coming.
+                Collapse smoky gas clouds into stars. Bigger stars score more and leave stronger remnants — but you are flying through a crowded galaxy, and the other stars will not make way.
               </p>
             </div>
             <ul className="space-y-1.5 text-sm text-slate">
-              <li><span className="text-electric">Drag</span> to steer the cloud and swallow glowing gas (gas is always safe).</li>
-              <li><span className="text-electric">Hold</span> COMPRESS (or tap to toggle) to pack in more mass — but you move slower.</li>
-              <li><span className="text-gold">DETONATE</span> any time to bank the star and leave a remnant that fights spikes. A new cloud starts instantly.</li>
-              <li>Detonate again within {COMBO_WINDOW_SEC}s to chain a ×{COMBO_STEPS[COMBO_STEPS.length - 1]} bonus. Small stars (M, K) also give a brief shield.</li>
-              <li>Lose all {START_LIVES} Hosky paws 🐾 and the run ends.</li>
+              <li><span className="text-electric">Drag</span> to steer your gas cloud and swallow the glowing smoke wisps. Gas is always safe.</li>
+              <li><span className="text-electric">Hold</span> COMPRESS (or tap to toggle) to pack mass in and keep it — but you move slower. A loose cloud slowly leaks mass, and a bigger cloud needs more gas to grow.</li>
+              <li><span className="text-gold">DETONATE</span> any time to bank the star and leave a remnant that destroys hazards. A new cloud starts instantly.</li>
+              <li>Chain detonations within {COMBO_WINDOW_SEC}s for up to ×{COMBO_STEPS[COMBO_STEPS.length - 1]}. Small stars (M, K, G) also grant a short shield.</li>
+              <li>You are travelling through the Milky Way. <span className="text-rose-300">Red-ringed</span> stars, their planets, rogue stars and runaway stars all cost a Hosky paw 🐾. Lose all {START_LIVES} and the run ends.</li>
             </ul>
             <TopBoard top={top} available={boardOk} />
             <div className="sticky bottom-0 -mx-4 -mb-4 mt-auto flex items-center justify-between gap-3 bg-navy px-4 py-3">
@@ -583,14 +582,14 @@ export function HoskyStarForm() {
               <p className="pb-1 text-right text-xs text-slate-muted">
                 {newBest ? <span className="text-gold">New personal best!</span> : <>Best: <span className="font-mono text-white">{best}</span></>}
                 <br />
-                {Math.round(summary.durationSec)}s · {summary.kills} spikes destroyed
+                {Math.round(summary.durationSec)}s · {summary.kills} hazards destroyed
               </p>
             </div>
 
             <div className="rounded-xl border border-white/10 bg-black/30 p-3">
               <p className="card-label mb-2">Score breakdown</p>
               {summary.detonations.length === 0 ? (
-                <p className="text-xs text-slate-muted">No stars detonated — next time, bank a star before the spikes get you.</p>
+                <p className="text-xs text-slate-muted">No stars detonated — next time, bank a star before the hazards get you.</p>
               ) : (
                 <table className="w-full text-sm">
                   <tbody>
@@ -742,6 +741,20 @@ export function HoskyStarForm() {
           ))}
         </ul>
         <p className="mt-3 text-xs text-slate-muted">{STAR_FORM_NOTE}</p>
+
+        <h3 className="mt-5 text-sm font-semibold text-white">What you are flying through</h3>
+        <p className="mt-1 text-xs leading-relaxed text-slate">{STAR_FORM_TRAVEL}</p>
+        <ul className="mt-2 space-y-2">
+          {OBSTACLE_TEACH.map((o) => (
+            <li key={o.name} className="rounded-xl border border-rose-300/20 bg-black/20 p-3 text-xs leading-relaxed text-slate">
+              <p className="flex flex-wrap items-center gap-2">
+                <span className="font-semibold text-white">{o.name}</span>
+                <span className="text-slate-muted">in game: {o.game}</span>
+              </p>
+              <p className="mt-1">{o.fact}</p>
+            </li>
+          ))}
+        </ul>
       </section>
     </div>
   );

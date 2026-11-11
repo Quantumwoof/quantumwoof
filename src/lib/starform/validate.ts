@@ -4,7 +4,7 @@
  * wrong arithmetic, absurd durations/scores, or more star mass than the game's
  * gas supply could ever have delivered in that time.
  */
-import { CLOUD, DETONATE_MIN_EFF_MASS, GAS, LB, SPECTRAL, SPECTRAL_ORDER, type SpectralId } from "./config";
+import { CLOUD, DETONATE_MIN_EFF_MASS, GAS, LB, SPECTRAL, SPECTRAL_ORDER, minRawGasFor, type SpectralId } from "./config";
 import { scoreOf } from "./engine";
 
 export type RunSubmission = {
@@ -70,7 +70,7 @@ export function checkRun(run: RunSubmission): string | null {
   // Star mass consumed can't exceed the gas the game ever supplies.
   let needed = 0;
   for (const d of run.detonations) {
-    needed += Math.max(SPECTRAL[d.k].minEffMass, DETONATE_MIN_EFF_MASS) / (1 + CLOUD.compressMassBoost);
+    needed += minRawGasFor(Math.max(SPECTRAL[d.k].minEffMass, DETONATE_MIN_EFF_MASS));
   }
   const supplied =
     (GAS.startOnField + GAS.spawnPerSec * run.durationSec) * GAS.mass +

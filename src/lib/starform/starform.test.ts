@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { CLOUD, LB, SPECTRAL, SPECTRAL_ORDER, STEP, MAX_REMNANTS, type SpectralId } from "./config";
-import { StarForm, classify, scoreOf } from "./engine";
+import { StarForm, classify, partsOf, scoreOf } from "./engine";
 import { checkRun, parseRun, sanitizeName } from "./validate";
 
 function snapshot(seed: number, seconds: number) {
@@ -87,7 +87,7 @@ describe("star form engine", () => {
     const g = new StarForm(3);
     g.cloud.invuln = 0;
     for (let guard = 0; guard < 3 && !g.ended; guard++) {
-      g.obstacles.push({ id: 900 + guard, kind: "drifter", x: g.cloud.x, y: g.cloud.y, vx: 0, vy: 0, r: 24, age: 0, warn: 0, heading: 0, phase: 0 });
+      g.obstacles.push({ id: 900 + guard, kind: "drifter", style: 0, planets: [], x: g.cloud.x, y: g.cloud.y, vx: 0, vy: 0, r: 24, age: 0, warn: 0, heading: 0, phase: 0 });
       g.step();
       g.cloud.invuln = 0;
     }
@@ -103,9 +103,91 @@ describe("star form engine", () => {
     g.cloud.comp = 1;
     g.detonate();
     g.obstacles.length = 0;
-    g.obstacles.push({ id: 901, kind: "drifter", x: g.cloud.x + 60, y: g.cloud.y, vx: 0, vy: 0, r: 20, age: 0, warn: 0, heading: 0, phase: 0 });
+    g.obstacles.push({ id: 901, kind: "drifter", style: 0, planets: [], x: g.cloud.x + 60, y: g.cloud.y, vx: 0, vy: 0, r: 20, age: 0, warn: 0, heading: 0, phase: 0 });
     for (let i = 0; i < 60; i++) g.step();
     expect(g.obstacles.find((o) => o.id === 901)).toBeUndefined();
+  });
+});
+
+describe("stars and planets", () => {
+  test("a planet orbiting a drifter hurts the cloud even when the star itself misses", () => {
+    const g = new StarForm(11);
+    g.cloud.invuln = 0;
+    g.obstacles.length = 0;
+    const planet = { orbit: 60, r: 9, phase: 0, speed: 0, ring: false };
+    g.obstacles.push({ id: 950, kind: "drifter", style: 2, planets: [planet], x: g.cloud.x - 60, y: g.cloud.y, vx: 0, vy: 0, r: 20, age: 0, warn: 0, heading: 0, phase: 0 });
+    expect(partsOf(g.obstacles[0]).length).toBe(2);
+    g.step();
+    expect(g.lives).toBe(2);
+  });
+
+  test("drifters spawn with 1-3 planets, chasers/darts with none", () => {
+    const g = new StarForm(21);
+    g.cloud.invuln = 9999;
+    const seen = new Map<string, Set<number>>();
+    for (let i = 0; i < 120 * 60; i++) {
+      g.step();
+      g.drain();
+      for (const o of g.obstacles) {
+        const set = seen.get(o.kind) ?? new Set<number>();
+        set.add(o.planets.length);
+        seen.set(o.kind, set);
+      }
+    }
+    for (const n of seen.get("drifter") ?? []) expect(n >= 1 && n <= 3).toBe(true);
+    for (const n of seen.get("chaser") ?? []) expect(n).toBe(0);
+    for (const n of seen.get("dart") ?? []) expect(n).toBe(0);
+    expect(seen.has("drifter")).toBe(true);
+  });
+
+  test("a black hole remnant also removes an obstacle whose planet is in range", () => {
+    const g = new StarForm(5);
+    g.cloud.invuln = 9999;
+    g.cloud.mass = 60;
+    g.cloud.comp = 1;
+    g.detonate();
+    g.obstacles.length = 0;
+    // star far out, planet parked inside the black hole's core
+    g.obstacles.push({ id: 951, kind: "drifter", style: 0, planets: [{ orbit: 60, r: 8, phase: 0, speed: 0, ring: false }], x: g.cloud.x + 120, y: g.cloud.y, vx: 0, vy: 0, r: 20, age: 0, warn: 0, heading: 0, phase: 0 });
+    for (let i = 0; i < 90; i++) g.step();
+    expect(g.obstacles.find((o) => o.id === 951)).toBeUndefined();
+  });
+});
+
+describe("harder progression", () => {
+  test("O needs far more gas than before and a lone puff of gas buys less as the cloud grows", () => {
+    const g = new StarForm(2);
+    g.gas.length = 0;
+    g.cloud.mass = 0;
+    const gain = (m: number) => {
+      const h = new StarForm(2);
+      h.cloud.mass = m;
+      h.cloud.comp = 1;
+      h.gas.length = 0;
+      h.gas.push({ id: 1, x: h.cloud.x, y: h.cloud.y, vx: 0, vy: 0, age: 0, pulled: true });
+      for (let i = 0; i < 5; i++) h.step();
+      return h.cloud.mass - m;
+    };
+    expect(gain(1)).toBeGreaterThan(gain(30) * 2);
+    expect(SPECTRAL.O.minEffMass).toBeGreaterThanOrEqual(50);
+  });
+
+  test("an uncompressed cloud slowly loses mass; a compressed one keeps it", () => {
+    const g = new StarForm(3);
+    g.cloud.invuln = 9999;
+    g.gas.length = 0;
+    g.cloud.mass = 20;
+    g.input.compress = false;
+    for (let i = 0; i < 600; i++) g.step();
+    expect(g.cloud.mass).toBeLessThan(20);
+    const h = new StarForm(3);
+    h.cloud.invuln = 9999;
+    h.gas.length = 0;
+    h.cloud.mass = 20;
+    h.cloud.comp = 1;
+    h.input.compress = true;
+    for (let i = 0; i < 600; i++) h.step();
+    expect(h.cloud.mass).toBeGreaterThanOrEqual(20);
   });
 });
 

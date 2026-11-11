@@ -6,7 +6,7 @@ import { pageMetadata } from "@/lib/page-metadata";
 export const metadata: Metadata = pageMetadata({
   title: "Hosky Star Form · Woof games",
   description:
-    "Collapse gas clouds into stars from O to M, leave black holes, neutron stars and white dwarfs, and survive the spikes. Learn how stars form while you play.",
+    "Collapse gas clouds into stars from O to M, leave black holes, neutron stars and white dwarfs, and survive the passing stars. Learn how stars form while you play.",
   path: "/play/star-form",
 });
 
