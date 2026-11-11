@@ -40,6 +40,10 @@ type Hud = {
 const BEST_KEY = "qw-starform-best-dist"; // light-seconds; the old points best used a different key
 const NAME_KEY = "qw-starform-name";
 const HELD_TAP_MS = 220;
+/** Tap-to-compress on the cloud: max press time, max finger/mouse travel, and how close to the cloud. */
+const TAP_MS = 260;
+const TAP_SLOP_PX = 12;
+const TAP_NEAR = 60;
 
 const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
 const fmtMul = (n: number) => (n >= 100 ? String(Math.round(n)) : n >= 10 ? n.toFixed(0) : n.toFixed(1));
@@ -431,7 +435,24 @@ export function HoskyStarForm() {
   }, [phase, detonate, setCompress]);
 
   // ---- pointer steering on the canvas
-  const pointer = useRef<{ id: number | null; x: number; y: number }>({ id: null, x: 0, y: 0 });
+  const pointer = useRef<{ id: number | null; x: number; y: number; sx: number; sy: number; at: number; onCloud: boolean }>({
+    id: null,
+    x: 0,
+    y: 0,
+    sx: 0,
+    sy: 0,
+    at: 0,
+    onCloud: false,
+  });
+  /** A quick, still press that started on (or right next to) the cloud = toggle COMPRESS. */
+  const isCloudTap = (e: React.PointerEvent) => {
+    const p = pointer.current;
+    return (
+      p.onCloud &&
+      performance.now() - p.at < TAP_MS &&
+      Math.hypot(e.clientX - p.sx, e.clientY - p.sy) < TAP_SLOP_PX
+    );
+  };
   const toWorld = (clientX: number, clientY: number) => {
     const rect = canvasRef.current!.getBoundingClientRect();
     return {
@@ -443,7 +464,9 @@ export function HoskyStarForm() {
     const g = gameRef.current;
     if (!g || phase !== "playing") return;
     e.currentTarget.setPointerCapture(e.pointerId);
-    pointer.current = { id: e.pointerId, x: e.clientX, y: e.clientY };
+    const w0 = toWorld(e.clientX, e.clientY);
+    const onCloud = Math.hypot(w0.x - g.cloud.x, w0.y - g.cloud.y) < g.radius() + TAP_NEAR;
+    pointer.current = { id: e.pointerId, x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, at: performance.now(), onCloud };
     if (e.pointerType === "mouse") {
       const w = toWorld(e.clientX, e.clientY);
       g.input.tx = w.x;
@@ -470,11 +493,15 @@ export function HoskyStarForm() {
     pointer.current.y = e.clientY;
   };
   const onPointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const tapOnCloud = pointer.current.id === e.pointerId && isCloudTap(e);
     if (pointer.current.id === e.pointerId) pointer.current.id = null;
+    const c = compressRef.current;
     if (e.pointerType === "mouse") {
-      const c = compressRef.current;
-      const tap = performance.now() - c.pressAt < HELD_TAP_MS;
-      setCompress(false, tap ? !c.latched : false);
+      // hold anywhere = compress while held; a quick click on the cloud toggles it on/off
+      const quick = performance.now() - c.pressAt < HELD_TAP_MS;
+      setCompress(false, tapOnCloud ? !c.latched : quick ? c.latched : false);
+    } else if (tapOnCloud) {
+      setCompress(c.held, !c.latched); // touch: tap your cloud to toggle
     }
     const g = gameRef.current;
     if (g && e.pointerType !== "mouse") {
@@ -602,7 +629,7 @@ export function HoskyStarForm() {
             </div>
             <ul className="space-y-1.5 text-sm text-slate">
               <li>You cruise through the Milky Way and <span className="text-electric">distance</span> is your score. It rolls up from light-seconds to light-years (a <em>game scale</em>, not real physics).</li>
-              <li><span className="text-electric">Drag</span> to steer your gas cloud and swallow the smoke wisps. Gas is always safe. <span className="text-electric">Hold</span> COMPRESS (or tap to toggle) to pack mass in — a loose cloud slowly leaks it, and a bigger cloud needs more gas to grow.</li>
+              <li><span className="text-electric">Drag</span> to steer your gas cloud and swallow the smoke wisps. Gas is always safe. <span className="text-electric">Tap your cloud</span> to switch COMPRESS on or off (a ring shows it&rsquo;s on), or <span className="text-electric">hold</span> COMPRESS (or tap to toggle) to pack mass in — a loose cloud slowly leaks it, and a bigger cloud needs more gas to grow.</li>
               <li><span className="text-gold">DETONATE</span> to make a star: it gives a <span className="text-gold">speed boost</span> that fades over a few seconds — bigger stars boost far more — and leaves a remnant that <span className="text-gold">hunts hazards</span> for you. Remnants roam the arena and get stronger up the ladder — K, G, F, A, then B and O: B&rsquo;s neutron star drifts toward crowds, pulls hazards in and cuts them down with its beams; O&rsquo;s black hole pulls hardest, swallows what reaches it and fires jets at distant hazards. A&rsquo;s white dwarf clears a ring first, then hunts. None of them ever touch you or your gas, and each wears a name tag while it lasts. Your star type never drops back once reached &mdash; releasing COMPRESS or taking a hit won&rsquo;t downgrade it.</li>
               <li>Chain detonations within {COMBO_WINDOW_SEC}s to scale the boost up to ×{COMBO_STEPS[COMBO_STEPS.length - 1]}. Small stars (M, K, G) also grant a short shield.</li>
               <li><span className="text-rose-300">Red-ringed</span> stars, their planets, rogue stars and runaway stars cost a Hosky paw 🐾 (you blink and are safe for a few seconds after). You start with {START_LIVES}; lose them all and the run ends. Detonating a <span className="text-gold">B or O star</span> wins one paw back, up to {MAX_LIVES}.</li>

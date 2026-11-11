@@ -886,6 +886,19 @@ export function draw(ctx: CanvasRenderingContext2D, g: StarForm, fx: Fx, o: Draw
   glow(ctx, c.x, c.y, R * (0.5 - 0.1 * c.comp), "#ffffff", 0.6 + 0.2 * c.comp);
   ctx.globalCompositeOperation = "source-over";
   ctx.restore();
+  // compress-on ring (tap the cloud or use the button)
+  if (g.input.compress) {
+    ctx.save();
+    ctx.setLineDash([10, 8]);
+    ctx.lineDashOffset = -t * 40;
+    ctx.strokeStyle = "rgba(120,230,255,0.85)";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, R + 14, 0, 6.3);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
   // shield ring (invulnerable)
   if (c.invuln > 0) {
     ctx.strokeStyle = `rgba(160,240,255,${Math.min(0.9, 0.3 + c.invuln * 0.4)})`;

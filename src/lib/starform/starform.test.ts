@@ -312,6 +312,41 @@ describe("star form engine", () => {
     expect(d1).toBeLessThan(d0 - 2);
   });
 
+  test("an uncompressed cloud only leaks when starving, so it never stalls", () => {
+    const mk = () => {
+      const g = new StarForm(17);
+      g.obstacles.length = 0;
+      g.cloud.invuln = 1e9;
+      g.cloud.mass = 30;
+      g.cloud.comp = 0;
+      g.input.compress = false;
+      return g;
+    };
+    // keep feeding a wisp every 2 s: no leak, mass keeps rising
+    const fed = mk();
+    let prev = fed.cloud.mass;
+    for (let s = 0; s < 20; s++) {
+      fed.gas.length = 0;
+      fed.gas.push({ id: 8000 + s, x: fed.cloud.x, y: fed.cloud.y, vx: 0, vy: 0, age: 0, pulled: true });
+      for (let i = 0; i < 120; i++) {
+        fed.obstacles.length = 0;
+        if (i > 10) fed.gas.length = 0;
+        fed.step();
+      }
+      expect(fed.cloud.mass).toBeGreaterThan(prev);
+      prev = fed.cloud.mass;
+    }
+    // starving (no gas for longer than the grace): it leaks
+    const starve = mk();
+    for (let i = 0; i < 60 * 12; i++) {
+      starve.obstacles.length = 0;
+      starve.gas.length = 0;
+      starve.step();
+    }
+    expect(starve.cloud.mass).toBeLessThan(30);
+    expect(CLOUD.leakGraceSec).toBeGreaterThan(0);
+  });
+
   test("steering speed does not depend on mass or run time", () => {
     const travel = (mass: number, warm: number) => {
       const g = new StarForm(8);
@@ -454,13 +489,17 @@ describe("harder progression", () => {
     expect(SPECTRAL.O.minEffMass).toBeGreaterThanOrEqual(50);
   });
 
-  test("an uncompressed cloud slowly loses mass; a compressed one keeps it", () => {
+  test("a starving uncompressed cloud slowly loses mass; a compressed one keeps it", () => {
     const g = new StarForm(3);
     g.cloud.invuln = 9999;
     g.gas.length = 0;
     g.cloud.mass = 20;
     g.input.compress = false;
-    for (let i = 0; i < 600; i++) g.step();
+    for (let i = 0; i < 900; i++) {
+      g.gas.length = 0;
+      g.obstacles.length = 0;
+      g.step();
+    }
     expect(g.cloud.mass).toBeLessThan(20);
     const h = new StarForm(3);
     h.cloud.invuln = 9999;

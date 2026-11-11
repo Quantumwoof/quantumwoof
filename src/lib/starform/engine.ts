@@ -178,6 +178,8 @@ export class StarForm {
   detCooldown = 0;
   kills = 0;
   lastLost = 0;
+  /** Time of the last gas wisp swallowed (the cloud only leaks when starving). */
+  lastGasT = 0;
 
   private rngSpawn: Rng;
   private rngGas: Rng;
@@ -449,7 +451,8 @@ export class StarForm {
     c.y = clamp(c.y, rad, WORLD_H - rad);
 
     // slow decay unless compressing; tiny free trickle so a cloud always grows a bit
-    c.mass = Math.max(0, c.mass - c.mass * CLOUD.decayPerSec * (1 - c.comp) * dt);
+    const starving = this.t - this.lastGasT > CLOUD.leakGraceSec;
+    if (starving) c.mass = Math.max(0, c.mass - c.mass * CLOUD.decayPerSec * (1 - c.comp) * dt);
     c.mass = Math.min(CLOUD.maxMass, c.mass + CLOUD.passiveMassPerSec * dt);
 
     // gas (never harmful)
@@ -470,6 +473,7 @@ export class StarForm {
         if (gd < rad * 0.8 + 4) {
           this.gas.splice(this.gas.indexOf(g), 1);
           c.mass = Math.min(CLOUD.maxMass, c.mass + GAS.mass / (1 + c.mass / CLOUD.diminishMass));
+          this.lastGasT = this.t;
           this.events.push({ e: "gas", x: g.x, y: g.y });
           continue;
         }
