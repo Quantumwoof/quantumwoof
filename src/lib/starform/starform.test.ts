@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { CLOUD, LB, SPECTRAL, SPECTRAL_ORDER, STEP, MAX_REMNANTS, LS_PER_LY, TRAVEL, type SpectralId } from "./config";
+import { CLOUD, HIT_INVULN_SEC, LB, MAX_LIVES, START_LIVES, SPECTRAL, SPECTRAL_ORDER, STEP, MAX_REMNANTS, LS_PER_LY, TRAVEL, type SpectralId } from "./config";
 import { DistanceTracker, formatDistance, simulateDistance } from "./distance";
 import { StarForm, classify, partsOf } from "./engine";
 import { elapsedLooksRight, parseRun, sanitizeName, verifyRun, type RunDet } from "./validate";
@@ -84,10 +84,17 @@ describe("star form engine", () => {
     expect(g.remnants.length).toBeLessThanOrEqual(MAX_REMNANTS);
   });
 
-  test("three hits end the run", () => {
+  test("losing all paws ends the run; a hit grants a long blink-and-safe window", () => {
+    expect(START_LIVES).toBe(5);
     const g = new StarForm(3);
     g.cloud.invuln = 0;
-    for (let guard = 0; guard < 3 && !g.ended; guard++) {
+    g.obstacles.push({ id: 899, kind: "drifter", style: 0, planets: [], x: g.cloud.x, y: g.cloud.y, vx: 0, vy: 0, r: 24, age: 0, warn: 0, heading: 0, phase: 0 });
+    g.step();
+    expect(g.lives).toBe(START_LIVES - 1);
+    expect(g.cloud.invuln).toBeGreaterThan(HIT_INVULN_SEC - 0.05);
+    expect(HIT_INVULN_SEC).toBeGreaterThanOrEqual(3);
+    g.cloud.invuln = 0;
+    for (let guard = 0; guard < START_LIVES && !g.ended; guard++) {
       g.obstacles.push({ id: 900 + guard, kind: "drifter", style: 0, planets: [], x: g.cloud.x, y: g.cloud.y, vx: 0, vy: 0, r: 24, age: 0, warn: 0, heading: 0, phase: 0 });
       g.step();
       g.cloud.invuln = 0;
@@ -95,6 +102,23 @@ describe("star form engine", () => {
     expect(g.lives).toBe(0);
     expect(g.ended).toBe(true);
     expect(STEP).toBeGreaterThan(0);
+  });
+
+  test("detonating B or O wins a paw back (capped); other stars do not", () => {
+    const det = (mass: number, lives: number) => {
+      const g = new StarForm(4);
+      g.cloud.invuln = 999;
+      g.cloud.mass = mass;
+      g.cloud.comp = 1;
+      g.lives = lives;
+      g.detonate();
+      const evs = g.drain();
+      return { lives: g.lives, paw: evs.some((e) => e.e === "paw") };
+    };
+    expect(det(60, 3)).toEqual({ lives: 4, paw: true }); // O
+    expect(det(32, 3)).toEqual({ lives: 4, paw: true }); // B (eff 51)
+    expect(det(60, MAX_LIVES)).toEqual({ lives: MAX_LIVES, paw: false }); // capped
+    expect(det(12, 3)).toEqual({ lives: 3, paw: false }); // F / lower
   });
 
   test("black hole follows the cloud at a distance, never touching gas or the player", () => {
@@ -159,7 +183,7 @@ describe("stars and planets", () => {
     g.obstacles.push({ id: 950, kind: "drifter", style: 2, planets: [planet], x: g.cloud.x - 60, y: g.cloud.y, vx: 0, vy: 0, r: 20, age: 0, warn: 0, heading: 0, phase: 0 });
     expect(partsOf(g.obstacles[0]).length).toBe(2);
     g.step();
-    expect(g.lives).toBe(2);
+    expect(g.lives).toBe(START_LIVES - 1);
   });
 
   test("drifters spawn with 1-3 planets, chasers/darts with none", () => {

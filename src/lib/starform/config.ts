@@ -11,8 +11,11 @@ export const WORLD_W = 800;
 export const WORLD_H = 1000;
 export const STEP = 1 / 60; // fixed sim step (seconds) — keeps the seed fair
 
-export const START_LIVES = 3;
-export const HIT_INVULN_SEC = 1.6; // after losing a paw
+export const START_LIVES = 5;
+export const MAX_LIVES = 5;
+/** Detonating one of these star types wins back a Hosky paw (up to MAX_LIVES). */
+export const PAW_REGAIN_TYPES = ["B", "O"] as const;
+export const HIT_INVULN_SEC = 3.2; // after losing a paw (the cloud blinks meanwhile)
 export const HIT_MASS_KEEP = 0.65; // cloud keeps this share of mass when hit
 export const NEW_CLOUD_GRACE_SEC = 0.6;
 

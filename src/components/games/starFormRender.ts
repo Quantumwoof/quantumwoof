@@ -2,7 +2,7 @@
  * Canvas rendering + particle effects for Hosky Star Form.
  * Reads engine state, never mutates it (only its own `Fx` state).
  */
-import { OBSTACLE, OBSTACLE_STARS, REMNANT, SPECTRAL, WORLD_H, WORLD_W, type SpectralId } from "@/lib/starform/config";
+import { HIT_INVULN_SEC, OBSTACLE, OBSTACLE_STARS, REMNANT, SPECTRAL, WORLD_H, WORLD_W, type SpectralId } from "@/lib/starform/config";
 import { STAR_TEACH } from "@/content/starForm";
 import { partsOf, type GameEvent, type Obstacle, type Remnant, type StarForm } from "@/lib/starform/engine";
 
@@ -217,6 +217,10 @@ export function applyEvents(fx: Fx, events: GameEvent[]) {
       case "gas":
         burst(fx, ev.x, ev.y, "#9fe8ff", 3, 70, 0.4, 1.8);
         puff(fx, ev.x, ev.y, "#9fe8ff", 34, 20, 0.5, 0.35, 0.6);
+        break;
+      case "paw":
+        fx.floaters.push({ x: ev.x, y: ev.y - 70, text: "+1 paw 🐾", color: "#9dffb0", life: 1.9, big: false, note: false });
+        burst(fx, ev.x, ev.y, "#9dffb0", 14, 150, 0.7, 2.4);
         break;
       case "kill":
         burst(fx, ev.x, ev.y, "#ff4d6d", 16, 190, 0.6, 2.6);
@@ -816,7 +820,7 @@ export function draw(ctx: CanvasRenderingContext2D, g: StarForm, fx: Fx, o: Draw
   const col = tiny ? "#8fd8ff" : spec.color;
   const gl = tiny ? "#4aa8e0" : spec.glow;
   ctx.save();
-  if (c.invuln > 0 && Math.floor(t * 14) % 2 === 0 && c.invuln < 1.6) ctx.globalAlpha = 0.6;
+  if (c.invuln > 0 && Math.floor(t * 14) % 2 === 0 && c.invuln < HIT_INVULN_SEC + 0.1) ctx.globalAlpha = 0.55;
   ctx.setLineDash([3, 9]);
   ctx.strokeStyle = hexA(col, 0.2);
   ctx.lineWidth = 1.5;

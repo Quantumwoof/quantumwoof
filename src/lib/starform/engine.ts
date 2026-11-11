@@ -24,6 +24,8 @@ import {
   SPECTRAL,
   SPECTRAL_ORDER,
   START_LIVES,
+  MAX_LIVES,
+  PAW_REGAIN_TYPES,
   STEP,
   WORLD_H,
   WORLD_W,
@@ -90,6 +92,7 @@ export type GameEvent =
   | { e: "gas"; x: number; y: number }
   | { e: "kill"; x: number; y: number; by: SpectralId | "blast" }
   | { e: "hit"; x: number; y: number }
+  | { e: "paw"; x: number; y: number }
   | { e: "detonate"; x: number; y: number; type: SpectralId; boost: number; mult: number; blast: number }
   | { e: "fizzle"; x: number; y: number }
   | { e: "remnantEnd"; x: number; y: number; type: SpectralId }
@@ -369,6 +372,10 @@ export class StarForm {
     }
 
     this.events.push({ e: "detonate", x: c.x, y: c.y, type, boost: spec.boost * mult, mult, blast });
+    if ((PAW_REGAIN_TYPES as readonly SpectralId[]).includes(type) && this.lives < MAX_LIVES) {
+      this.lives++;
+      this.events.push({ e: "paw", x: c.x, y: c.y });
+    }
     // New cloud right away, same place; small-star niche = brief shield.
     c.mass = 0;
     c.comp = 0;

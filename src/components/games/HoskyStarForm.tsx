@@ -10,6 +10,7 @@ import {
   SPECTRAL,
   SPECTRAL_ORDER,
   START_LIVES,
+  MAX_LIVES,
   STEP,
   WORLD_H,
   WORLD_W,
@@ -71,9 +72,9 @@ const EMPTY_HUD: Hud = { lives: START_LIVES, distance: 0, speed: 1, type: "M", p
 
 function Paws({ lives }: { lives: number }) {
   return (
-    <span className="flex items-center gap-1" role="img" aria-label={`${lives} of ${START_LIVES} Hosky paws left`}>
+    <span className="flex shrink-0 items-center gap-0.5 sm:gap-1" role="img" aria-label={`${lives} of ${START_LIVES} Hosky paws left`}>
       {Array.from({ length: START_LIVES }, (_, i) => (
-        <span key={i} className={`text-xl transition ${i < lives ? "" : "opacity-20 grayscale"}`} aria-hidden>
+        <span key={i} className={`text-[0.95rem] leading-none transition sm:text-xl ${i < lives ? "" : "opacity-20 grayscale"}`} aria-hidden>
           🐾
         </span>
       ))}
@@ -525,9 +526,9 @@ export function HoskyStarForm() {
         <Paws lives={phase === "playing" ? hud.lives : START_LIVES} />
         <div className="min-w-0 text-center">
           <p className="card-label leading-none">Distance</p>
-          <p className="font-mono text-xl font-semibold leading-tight text-white sm:text-2xl" data-testid="sf-distance">
+          <p className="whitespace-nowrap font-mono text-lg font-semibold leading-tight text-white sm:text-2xl" data-testid="sf-distance">
             {formatDistance(hud.distance).value}{" "}
-            <span className="text-xs font-medium text-electric-dim">{formatDistance(hud.distance).unit}</span>
+            <span className="block text-xs font-medium text-electric-dim min-[400px]:inline">{formatDistance(hud.distance).unit}</span>
           </p>
           <p className="font-mono text-[0.7rem] leading-none text-slate-muted" data-testid="sf-speed">
             speed <span className={hud.speed > 1.5 ? "text-electric" : ""}>×{fmtMul(hud.speed)}</span>
@@ -570,7 +571,7 @@ export function HoskyStarForm() {
               <li><span className="text-electric">Drag</span> to steer your gas cloud and swallow the smoke wisps. Gas is always safe. <span className="text-electric">Hold</span> COMPRESS (or tap to toggle) to pack mass in — a loose cloud slowly leaks it, and a bigger cloud needs more gas to grow.</li>
               <li><span className="text-gold">DETONATE</span> to make a star: it gives a <span className="text-gold">speed boost</span> that fades over a few seconds — bigger stars boost far more — and leaves a remnant that destroys hazards. An <span className="text-gold">O star</span>&rsquo;s black hole follows you, a little behind, and swallows hazards near it &mdash; it never pulls in you or your gas. Each remnant wears a name tag while it lasts.</li>
               <li>Chain detonations within {COMBO_WINDOW_SEC}s to scale the boost up to ×{COMBO_STEPS[COMBO_STEPS.length - 1]}. Small stars (M, K, G) also grant a short shield.</li>
-              <li><span className="text-rose-300">Red-ringed</span> stars, their planets, rogue stars and runaway stars cost a Hosky paw 🐾. Lose all {START_LIVES} and the run ends — survive, boost, go farthest.</li>
+              <li><span className="text-rose-300">Red-ringed</span> stars, their planets, rogue stars and runaway stars cost a Hosky paw 🐾 (you blink and are safe for a few seconds after). You start with {START_LIVES}; lose them all and the run ends. Detonating a <span className="text-gold">B or O star</span> wins one paw back, up to {MAX_LIVES}.</li>
             </ul>
             <TopBoard top={top} available={boardOk} />
             <div className="sticky bottom-0 -mx-4 -mb-4 mt-auto flex items-center justify-between gap-3 bg-navy px-4 py-3">
