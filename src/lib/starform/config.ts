@@ -34,9 +34,9 @@ export const CLOUD = {
    * Diminishing gas: each puff adds GAS.mass / (1 + mass / diminishMass), so the
    * bigger the cloud, the more gas it takes to grow further.
    */
-  diminishMass: 10,
+  diminishMass: 20,
   /** Share of mass lost per second while NOT compressing (scaled by 1 - compression). */
-  decayPerSec: 0.015,
+  decayPerSec: 0.01,
   catchMul: 2.0,
   catchPad: 18,
 } as const;
@@ -90,9 +90,9 @@ export type SpectralSpec = {
 };
 
 export const SPECTRAL: Record<SpectralId, SpectralSpec> = {
-  O: { id: "O", boost: 520, boostSec: 10, minEffMass: 58, color: "#6fa8ff", glow: "#3b6dff", kind: "blackhole", remnantName: "Black hole", life: 15, killCost: 0.45, radius: 200, shieldSec: 0 },
-  B: { id: "B", boost: 230, boostSec: 8, minEffMass: 41, color: "#a8d8ff", glow: "#5fb4ff", kind: "neutron", remnantName: "Neutron star", life: 13, killCost: 0.7, radius: 170, shieldSec: 0 },
-  A: { id: "A", boost: 95, boostSec: 6, minEffMass: 27, color: "#f2f6ff", glow: "#b9c8ff", kind: "dwarf-clear", remnantName: "White dwarf + shell", life: 6, killCost: 0.5, radius: 420, shieldSec: 0 },
+  O: { id: "O", boost: 520, boostSec: 10, minEffMass: 53, color: "#6fa8ff", glow: "#3b6dff", kind: "blackhole", remnantName: "Black hole", life: 15, killCost: 0.45, radius: 200, shieldSec: 0 },
+  B: { id: "B", boost: 230, boostSec: 8, minEffMass: 44, color: "#a8d8ff", glow: "#5fb4ff", kind: "neutron", remnantName: "Neutron star", life: 13, killCost: 0.7, radius: 170, shieldSec: 0 },
+  A: { id: "A", boost: 95, boostSec: 6, minEffMass: 28, color: "#f2f6ff", glow: "#b9c8ff", kind: "dwarf-clear", remnantName: "White dwarf + shell", life: 6, killCost: 0.5, radius: 420, shieldSec: 0 },
   F: { id: "F", boost: 22, boostSec: 4, minEffMass: 15, color: "#fff2b8", glow: "#ffe27a", kind: "orbiter", remnantName: "Guardian white dwarf", life: 12, killCost: 0.8, radius: 105, shieldSec: 0 },
   G: { id: "G", boost: 3, boostSec: 3, minEffMass: 8.5, color: "#ffd84a", glow: "#ffb800", kind: "patroller", remnantName: "Patrol white dwarf", life: 11, killCost: 0.8, radius: 62, shieldSec: 0.6 },
   K: { id: "K", boost: 1.5, boostSec: 2, minEffMass: 3.8, color: "#ffa24d", glow: "#ff7a1a", kind: "dwarf", remnantName: "Weak white dwarf", life: 6, killCost: 1.0, radius: 66, shieldSec: 1.0 },
