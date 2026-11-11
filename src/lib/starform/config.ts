@@ -58,8 +58,8 @@ export const GAS = {
   mass: 0.5,
   radius: 7,
   /** gas wisps per second (constant — gas never brings obstacles). */
-  spawnPerSec: 1.7,
-  maxOnField: 26,
+  spawnPerSec: 2.1,
+  maxOnField: 28,
   startOnField: 14,
   drift: 26,
   lifeSec: 22,
@@ -97,8 +97,8 @@ export type SpectralSpec = {
 };
 
 export const SPECTRAL: Record<SpectralId, SpectralSpec> = {
-  O: { id: "O", boost: 520, boostSec: 10, minEffMass: 57, color: "#6fa8ff", glow: "#3b6dff", kind: "blackhole", remnantName: "Black hole", life: 22, killCost: 0.28, radius: 430, shieldSec: 0 },
-  B: { id: "B", boost: 320, boostSec: 8, minEffMass: 48, color: "#a8d8ff", glow: "#5fb4ff", kind: "neutron", remnantName: "Neutron star", life: 17, killCost: 0.4, radius: 330, shieldSec: 0 },
+  O: { id: "O", boost: 520, boostSec: 10, minEffMass: 58, color: "#6fa8ff", glow: "#3b6dff", kind: "blackhole", remnantName: "Black hole", life: 22, killCost: 0.28, radius: 430, shieldSec: 0 },
+  B: { id: "B", boost: 320, boostSec: 8, minEffMass: 50, color: "#a8d8ff", glow: "#5fb4ff", kind: "neutron", remnantName: "Neutron star", life: 17, killCost: 0.4, radius: 330, shieldSec: 0 },
   A: { id: "A", boost: 80, boostSec: 6, minEffMass: 29, color: "#f2f6ff", glow: "#b9c8ff", kind: "dwarf-clear", remnantName: "White dwarf + shell", life: 14, killCost: 0.42, radius: 420, shieldSec: 0 },
   F: { id: "F", boost: 16, boostSec: 4, minEffMass: 15, color: "#fff2b8", glow: "#ffe27a", kind: "orbiter", remnantName: "Guardian white dwarf", life: 12, killCost: 0.7, radius: 100, shieldSec: 0 },
   G: { id: "G", boost: 4, boostSec: 3, minEffMass: 8.5, color: "#ffd84a", glow: "#ffb800", kind: "patroller", remnantName: "Patrol white dwarf", life: 10, killCost: 0.9, radius: 56, shieldSec: 0.6 },
