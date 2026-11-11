@@ -3,11 +3,12 @@
  * Reads engine state, never mutates it (only its own `Fx` state).
  */
 import { OBSTACLE, OBSTACLE_STARS, REMNANT, SPECTRAL, WORLD_H, WORLD_W, type SpectralId } from "@/lib/starform/config";
+import { STAR_TEACH } from "@/content/starForm";
 import { partsOf, type GameEvent, type Obstacle, type Remnant, type StarForm } from "@/lib/starform/engine";
 
 type Particle = { x: number; y: number; vx: number; vy: number; life: number; max: number; size: number; color: string; drag: number };
 type Smoke = { x: number; y: number; vx: number; vy: number; life: number; max: number; size: number; grow: number; rot: number; vr: number; color: string; variant: number; alpha: number };
-type Floater = { x: number; y: number; text: string; color: string; life: number; big: boolean };
+type Floater = { x: number; y: number; text: string; color: string; life: number; big: boolean; /** smaller, educational note */ note?: boolean };
 type Ring = { x: number; y: number; r: number; max: number; life: number; maxLife: number; color: string; width: number };
 type Layer = { speed: number; size: number; alpha: number; pts: { x: number; y: number; tw: number; hue: number }[] };
 
@@ -244,6 +245,10 @@ export function applyEvents(fx: Fx, events: GameEvent[]) {
           text: `${ev.type}  boost ×${ev.boost >= 10 ? Math.round(ev.boost) : ev.boost.toFixed(1)}`,
           color: c, life: 1.5, big,
         });
+        if (SPECTRAL[ev.type].kind === "none") {
+          // M stars leave nothing behind — say so, briefly, where it happened.
+          fx.floaters.push({ x: ev.x, y: ev.y + 14, text: `${STAR_TEACH[ev.type].name} – no remnant`, color: "#ffd2c8", life: 2.4, big: false, note: true });
+        }
         break;
       }
       case "fizzle":
@@ -312,7 +317,7 @@ export function stepFx(fx: Fx, dt: number, g?: StarForm) {
   fx.smoke = fx.smoke.filter((sm) => sm.life > 0);
   for (const f of fx.floaters) {
     f.life -= dt;
-    f.y -= 34 * dt;
+    if (!fx.reduced) f.y -= (f.note ? 14 : 34) * dt;
   }
   fx.floaters = fx.floaters.filter((f) => f.life > 0);
   for (const r of fx.rings) r.life -= dt;
@@ -497,6 +502,51 @@ function lifeArc(ctx: CanvasRenderingContext2D, x: number, y: number, r: number,
   ctx.beginPath();
   ctx.arc(x, y, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.max(0, frac));
   ctx.stroke();
+}
+
+/** Where (below the remnant's centre) its name label sits, so it clears the remnant's own art. */
+function labelOffset(r: Remnant): number {
+  switch (SPECTRAL[r.type].kind) {
+    case "blackhole": return REMNANT.blackhole.core * 0.75 + 30;
+    case "neutron": return 50;
+    case "orbiter": return REMNANT.orbiter.orbit + REMNANT.orbiter.bodyRadius + 28;
+    case "dwarf-clear": return 44;
+    case "patroller": return 50;
+    default: return 36;
+  }
+}
+
+/**
+ * Educational name tags that follow each remnant for its whole life. Outlined for
+ * legibility on small screens, faded with the remaining life, and nudged apart so
+ * stacked remnants don't print over each other. Render-only.
+ */
+function drawRemnantLabels(ctx: CanvasRenderingContext2D, g: StarForm) {
+  const placed: { x: number; y: number }[] = [];
+  ctx.save();
+  ctx.font = "bold 24px system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "alphabetic";
+  ctx.lineJoin = "round";
+  for (const r of g.remnants) {
+    const spec = SPECTRAL[r.type];
+    const frac = Math.max(0, r.life / r.maxLife);
+    const a = (0.35 + 0.65 * frac) * Math.min(1, frac * 6) * (r.fade > 0 ? r.fade / REMNANT.fadeOutSec : 1);
+    if (a <= 0.02) continue;
+    const x = Math.max(70, Math.min(WORLD_W - 70, r.x));
+    let y = Math.max(130, Math.min(WORLD_H - 24, r.y + labelOffset(r)));
+    for (let i = 0; i < 4; i++) {
+      if (placed.some((p) => Math.abs(p.x - x) < 150 && Math.abs(p.y - y) < 28)) y = Math.min(WORLD_H - 24, y + 28);
+    }
+    placed.push({ x, y });
+    ctx.globalAlpha = a;
+    ctx.strokeStyle = "rgba(2,6,23,0.92)";
+    ctx.lineWidth = 5;
+    ctx.strokeText(spec.remnantName, x, y);
+    ctx.fillStyle = spec.color;
+    ctx.fillText(spec.remnantName, x, y);
+  }
+  ctx.restore();
 }
 
 function drawRemnant(ctx: CanvasRenderingContext2D, r: Remnant, g: StarForm, t: number) {
@@ -834,11 +884,13 @@ export function draw(ctx: CanvasRenderingContext2D, g: StarForm, fx: Fx, o: Draw
   }
   ctx.globalCompositeOperation = "source-over";
 
+  drawRemnantLabels(ctx, g);
+
   // floating score text
   for (const f of fx.floaters) {
-    ctx.globalAlpha = Math.min(1, f.life * 1.4);
+    ctx.globalAlpha = Math.min(1, f.life * (f.note ? 0.9 : 1.4));
     ctx.fillStyle = f.color;
-    ctx.font = `bold ${f.big ? 34 : 26}px system-ui, sans-serif`;
+    ctx.font = `bold ${f.big ? 34 : f.note ? 22 : 26}px system-ui, sans-serif`;
     ctx.textAlign = "center";
     ctx.strokeStyle = "rgba(2,6,23,0.8)";
     ctx.lineWidth = 5;
