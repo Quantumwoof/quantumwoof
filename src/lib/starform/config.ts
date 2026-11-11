@@ -27,7 +27,11 @@ export const CLOUD = {
   /** Free trickle of mass so a cloud always grows a little (per second). */
   passiveMassPerSec: 0.03,
   maxSpeed: 560, // world units / s toward the drag target
-  compressSpeedMul: 0.6, // compressing makes the cloud heavy
+  /**
+   * Steering speed never depends on mass, score or run time. The only slowdown is this
+   * deliberate compress trade-off (a packed cloud is a bit heavier); 1 = none.
+   */
+  compressSpeedMul: 0.85,
   compressRiseSec: 1.4, // 0 → 1 while held
   compressFallSec: 3.2, // 1 → 0 when released
   compressHitboxShrink: 0.3, // hitbox shrinks by up to 30%
@@ -93,10 +97,10 @@ export type SpectralSpec = {
 };
 
 export const SPECTRAL: Record<SpectralId, SpectralSpec> = {
-  O: { id: "O", boost: 520, boostSec: 10, minEffMass: 53, color: "#6fa8ff", glow: "#3b6dff", kind: "blackhole", remnantName: "Black hole", life: 15, killCost: 0.45, radius: 200, shieldSec: 0 },
-  B: { id: "B", boost: 230, boostSec: 8, minEffMass: 44, color: "#a8d8ff", glow: "#5fb4ff", kind: "neutron", remnantName: "Neutron star", life: 13, killCost: 0.7, radius: 170, shieldSec: 0 },
-  A: { id: "A", boost: 95, boostSec: 6, minEffMass: 28, color: "#f2f6ff", glow: "#b9c8ff", kind: "dwarf-clear", remnantName: "White dwarf + shell", life: 6, killCost: 0.5, radius: 420, shieldSec: 0 },
-  F: { id: "F", boost: 22, boostSec: 4, minEffMass: 15, color: "#fff2b8", glow: "#ffe27a", kind: "orbiter", remnantName: "Guardian white dwarf", life: 12, killCost: 0.8, radius: 105, shieldSec: 0 },
+  O: { id: "O", boost: 520, boostSec: 10, minEffMass: 57, color: "#6fa8ff", glow: "#3b6dff", kind: "blackhole", remnantName: "Black hole", life: 15, killCost: 0.45, radius: 200, shieldSec: 0 },
+  B: { id: "B", boost: 320, boostSec: 8, minEffMass: 48, color: "#a8d8ff", glow: "#5fb4ff", kind: "neutron", remnantName: "Neutron star", life: 13, killCost: 0.7, radius: 170, shieldSec: 0 },
+  A: { id: "A", boost: 80, boostSec: 6, minEffMass: 29, color: "#f2f6ff", glow: "#b9c8ff", kind: "dwarf-clear", remnantName: "White dwarf + shell", life: 14, killCost: 0.3, radius: 420, shieldSec: 0 },
+  F: { id: "F", boost: 16, boostSec: 4, minEffMass: 15, color: "#fff2b8", glow: "#ffe27a", kind: "orbiter", remnantName: "Guardian white dwarf", life: 12, killCost: 0.8, radius: 105, shieldSec: 0 },
   G: { id: "G", boost: 3, boostSec: 3, minEffMass: 8.5, color: "#ffd84a", glow: "#ffb800", kind: "patroller", remnantName: "Patrol white dwarf", life: 11, killCost: 0.8, radius: 62, shieldSec: 0.6 },
   K: { id: "K", boost: 1.5, boostSec: 2, minEffMass: 3.8, color: "#ffa24d", glow: "#ff7a1a", kind: "dwarf", remnantName: "Weak white dwarf", life: 6, killCost: 1.0, radius: 66, shieldSec: 1.0 },
   M: { id: "M", boost: 0.4, boostSec: 1.5, minEffMass: 0, color: "#ff8f7a", glow: "#ff5a4a", kind: "none", remnantName: "No remnant", life: 0, killCost: 0, radius: 0, shieldSec: 1.8 },
@@ -133,7 +137,21 @@ export const REMNANT = {
   /** Neutron star beams. */
   neutron: { beams: 2, beamLen: 190, beamWidth: 15, spin: 2.3 },
   /** A star: one-time shell clear then a small white dwarf aura. */
-  clear: { auraRadius: 72 },
+  clear: {
+    /** Strike radius of the A-star dwarf (G patrol is 58, K weak is 66). */
+    auraRadius: 84,
+    /**
+     * The A-star dwarf is a leashed hunter: it chases the hazard closest to the cloud
+     * (faster and farther than the G patrol), never strays past `leash`, and when
+     * nothing threatens you it circles the cloud at `home.dist`, the other way round
+     * from the black hole and F's guardians.
+     */
+    hunt: {
+      speed: 500,
+      leash: 300,
+      home: { dist: 105, ease: 3.0, orbitSpin: -1.3, startAngle: Math.PI },
+    },
+  },
   /** F star: satellites orbiting the player's cloud. */
   orbiter: { bodies: 2, orbit: 100, bodyRadius: 34, spin: 2.6 },
   /** G star: hunts the nearest obstacle. */

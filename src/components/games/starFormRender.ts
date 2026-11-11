@@ -623,16 +623,16 @@ function drawRemnant(ctx: CanvasRenderingContext2D, r: Remnant, g: StarForm, t: 
         ctx.strokeStyle = hexA("#e8eeff", 0.8 * (1 - sh));
         ctx.lineWidth = 10 * (1 - sh) + 2;
         ctx.beginPath();
-        ctx.arc(r.x, r.y, spec.radius * sh, 0, 6.3);
+        ctx.arc(r.ox, r.oy, spec.radius * sh, 0, 6.3);
         ctx.stroke();
-        glow(ctx, r.x, r.y, spec.radius * sh * 0.9, "#b9c8ff", 0.18 * (1 - sh));
+        glow(ctx, r.ox, r.oy, spec.radius * sh * 0.9, "#b9c8ff", 0.18 * (1 - sh));
       }
       glow(ctx, r.x, r.y, REMNANT.clear.auraRadius, "#d8e2ff", 0.4);
       ctx.fillStyle = "#fff";
       ctx.beginPath();
-      ctx.arc(r.x, r.y, 9, 0, 6.3);
+      ctx.arc(r.x, r.y, 12, 0, 6.3);
       ctx.fill();
-      lifeArc(ctx, r.x, r.y, 20, frac, "#e8eeff", alpha);
+      lifeArc(ctx, r.x, r.y, 24, frac, "#e8eeff", alpha);
       break;
     }
     case "orbiter": {

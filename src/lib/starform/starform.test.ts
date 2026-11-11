@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { CLOUD, HIT_INVULN_SEC, LB, MAX_LIVES, START_LIVES, SPECTRAL, SPECTRAL_ORDER, STEP, MAX_REMNANTS, LS_PER_LY, TRAVEL, type SpectralId } from "./config";
+import { CLOUD, HIT_INVULN_SEC, REMNANT, LB, MAX_LIVES, START_LIVES, SPECTRAL, SPECTRAL_ORDER, STEP, MAX_REMNANTS, LS_PER_LY, TRAVEL, type SpectralId } from "./config";
 import { DistanceTracker, formatDistance, simulateDistance } from "./distance";
 import { StarForm, classify, partsOf } from "./engine";
 import { elapsedLooksRight, parseRun, sanitizeName, verifyRun, type RunDet } from "./validate";
@@ -119,6 +119,61 @@ describe("star form engine", () => {
     expect(det(32, 3)).toEqual({ lives: 4, paw: true }); // B (eff 51)
     expect(det(60, MAX_LIVES)).toEqual({ lives: MAX_LIVES, paw: false }); // capped
     expect(det(12, 3)).toEqual({ lives: 3, paw: false }); // F / lower
+  });
+
+  test("A-star white dwarf hunts a hazard within its leash, stays leashed, and orbits home otherwise", () => {
+    const g = new StarForm(6);
+    g.cloud.invuln = 9999;
+    g.cloud.mass = 20; // A (eff 32: ≥ 29, below B)
+    g.cloud.comp = 1;
+    g.detonate();
+    g.obstacles.length = 0;
+    const wd = g.remnants.find((r) => r.type === "A")!;
+    expect(wd).toBeDefined();
+    const q = REMNANT.clear.hunt;
+    // far-off hazard (outside leash) is ignored; a nearer one gets hunted down
+    g.obstacles.push({ id: 960, kind: "drifter", style: 0, planets: [], x: g.cloud.x + 240, y: g.cloud.y, vx: 0, vy: 0, r: 20, age: 0, warn: 0, heading: 0, phase: 0 });
+    let maxLeash = 0;
+    for (let i = 0; i < 120; i++) {
+      g.step();
+      maxLeash = Math.max(maxLeash, Math.hypot(wd.x - g.cloud.x, wd.y - g.cloud.y));
+    }
+    expect(g.obstacles.find((o) => o.id === 960)).toBeUndefined();
+    expect(maxLeash).toBeLessThanOrEqual(q.leash + 1);
+    // nothing to hunt: it settles into an orbit around the cloud at the home distance
+    g.obstacles.length = 0;
+    for (let i = 0; i < 120; i++) {
+      g.obstacles.length = 0;
+      g.step();
+    }
+    const d = Math.hypot(wd.x - g.cloud.x, wd.y - g.cloud.y);
+    expect(Math.abs(d - q.home.dist)).toBeLessThan(25);
+  });
+
+  test("steering speed does not depend on mass or run time", () => {
+    const travel = (mass: number, warm: number) => {
+      const g = new StarForm(8);
+      g.obstacles.length = 0;
+      g.cloud.invuln = 9999;
+      g.cloud.mass = mass;
+      g.cloud.comp = 0;
+      for (let i = 0; i < warm; i++) {
+        g.obstacles.length = 0;
+        g.step();
+      }
+      g.cloud.x = 100;
+      g.cloud.mass = mass;
+      g.cloud.comp = 0;
+      g.input.tx = 700;
+      g.input.ty = g.cloud.y;
+      g.input.compress = false;
+      const x0 = g.cloud.x;
+      for (let i = 0; i < 30; i++) g.step();
+      return g.cloud.x - x0;
+    };
+    const a = travel(0, 0);
+    expect(travel(55, 0)).toBeCloseTo(a, 5);
+    expect(travel(0, 60 * 120)).toBeCloseTo(a, 5);
   });
 
   test("black hole follows the cloud at a distance, never touching gas or the player", () => {

@@ -84,6 +84,9 @@ export type Remnant = {
   fade: number;
   /** A-star shell animation 0..1. */
   shell: number;
+  /** Where it was made (the A-star shell expands from here). */
+  ox: number;
+  oy: number;
 };
 
 export type Detonation = { k: SpectralId; m: number; t: number; /** engine step count at detonation */ s: number };
@@ -356,9 +359,11 @@ export class StarForm {
         life: spec.life,
         maxLife: spec.life,
         age: 0,
-        angle: 0,
+        angle: spec.kind === "dwarf-clear" ? REMNANT.clear.hunt.home.startAngle : 0,
         fade: 0,
         shell: 0,
+        ox: c.x,
+        oy: c.y,
       };
       this.remnants.push(rem);
       if (spec.kind === "dwarf-clear") {
@@ -594,6 +599,42 @@ export class StarForm {
         }
         case "dwarf-clear": {
           r.shell = Math.min(1, r.shell + dt / 0.7);
+          // Leashed hunter: chase the hazard nearest the cloud, else circle the cloud.
+          const q = REMNANT.clear.hunt;
+          let target: Obstacle | null = null;
+          let bestD = Infinity;
+          for (const o of live()) {
+            const cd = Math.hypot(o.x - c.x, o.y - c.y);
+            if (cd < q.leash && cd < bestD) {
+              bestD = cd;
+              target = o;
+            }
+          }
+          let tx: number;
+          let ty: number;
+          let rate: number;
+          if (target) {
+            tx = target.x;
+            ty = target.y;
+            rate = 9;
+          } else {
+            r.angle += q.home.orbitSpin * dt;
+            tx = clamp(c.x + Math.cos(r.angle) * q.home.dist, 30, WORLD_W - 30);
+            ty = clamp(c.y + Math.sin(r.angle) * q.home.dist, 30, WORLD_H - 30);
+            rate = q.home.ease * 3;
+          }
+          const td = Math.hypot(tx - r.x, ty - r.y);
+          if (td > 0.01) {
+            const mv = Math.min(q.speed * dt, td * rate * dt);
+            r.x += ((tx - r.x) / td) * mv;
+            r.y += ((ty - r.y) / td) * mv;
+          }
+          // leash: never farther than q.leash from the cloud
+          const ld = Math.hypot(r.x - c.x, r.y - c.y);
+          if (ld > q.leash) {
+            r.x = c.x + ((r.x - c.x) / ld) * q.leash;
+            r.y = c.y + ((r.y - c.y) / ld) * q.leash;
+          }
           for (const o of live()) {
             if (anyPart(o, (p) => Math.hypot(p.x - r.x, p.y - r.y) < REMNANT.clear.auraRadius + p.r)) hit(o);
           }

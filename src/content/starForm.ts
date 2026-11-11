@@ -15,7 +15,7 @@ export const STAR_TEACH: Record<SpectralId, { name: string; fact: string; remnan
   A: {
     name: "White star",
     fact: "A stars like Sirius A and Vega are about 1.4–2 Suns and burn white for around a billion years.",
-    remnant: "They puff off their outer layers as a glowing shell, then settle as a white dwarf (Sirius B is one).",
+    remnant: "They puff off their outer layers as a glowing shell, then settle as a white dwarf (Sirius B is one). In the game it hunts nearby hazards for you, on a leash.",
   },
   F: {
     name: "Yellow-white star",
