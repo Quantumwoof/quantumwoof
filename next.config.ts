@@ -8,6 +8,10 @@ const withPWA = withPWAInit({
   // Keep Wooftag mint/status and other APIs off the cache path.
   extendDefaultRuntimeCaching: true,
   workboxOptions: {
+    // New deploys take over immediately, so players never keep stale game chunks.
+    skipWaiting: true,
+    clientsClaim: true,
+    cleanupOutdatedCaches: true,
     runtimeCaching: [
       {
         urlPattern: ({ url }: { url: URL }) => url.pathname.startsWith("/api/"),

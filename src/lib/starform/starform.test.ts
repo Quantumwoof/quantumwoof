@@ -150,6 +150,35 @@ describe("star form engine", () => {
     expect(Math.abs(d - q.home.dist)).toBeLessThan(25);
   });
 
+  test("every remnant travels with the player instead of staying where it was made", () => {
+    const cases: [SpectralId, number][] = [["O", 60], ["B", 32], ["A", 20], ["F", 12], ["G", 7], ["K", 3]];
+    for (const [type, mass] of cases) {
+      const g = new StarForm(12);
+      g.obstacles.length = 0;
+      g.cloud.invuln = 9999;
+      g.cloud.mass = mass;
+      g.cloud.comp = 1;
+      g.detonate();
+      const r = g.remnants.find((x) => x.type === type);
+      expect(r).toBeDefined();
+      if (!r) continue;
+      const origin = { x: r.ox, y: r.oy };
+      g.input.compress = false;
+      let moved = 0;
+      for (let i = 0; i < 60 * 4; i++) {
+        g.obstacles.length = 0;
+        // sweep the cloud across the arena
+        g.input.tx = i % 240 < 120 ? 90 : 700;
+        g.input.ty = i % 240 < 120 ? 140 : 800;
+        g.step();
+        moved = Math.max(moved, Math.hypot(r.x - origin.x, r.y - origin.y));
+      }
+      const toCloud = Math.hypot(r.x - g.cloud.x, r.y - g.cloud.y);
+      expect(`${type} moved ${moved > 150}`).toBe(`${type} moved true`);
+      expect(`${type} near ${toCloud < 330}`).toBe(`${type} near true`);
+    }
+  });
+
   test("steering speed does not depend on mass or run time", () => {
     const travel = (mass: number, warm: number) => {
       const g = new StarForm(8);

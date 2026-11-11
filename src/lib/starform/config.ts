@@ -102,7 +102,7 @@ export const SPECTRAL: Record<SpectralId, SpectralSpec> = {
   A: { id: "A", boost: 80, boostSec: 6, minEffMass: 29, color: "#f2f6ff", glow: "#b9c8ff", kind: "dwarf-clear", remnantName: "White dwarf + shell", life: 14, killCost: 0.3, radius: 420, shieldSec: 0 },
   F: { id: "F", boost: 16, boostSec: 4, minEffMass: 15, color: "#fff2b8", glow: "#ffe27a", kind: "orbiter", remnantName: "Guardian white dwarf", life: 12, killCost: 0.8, radius: 105, shieldSec: 0 },
   G: { id: "G", boost: 3, boostSec: 3, minEffMass: 8.5, color: "#ffd84a", glow: "#ffb800", kind: "patroller", remnantName: "Patrol white dwarf", life: 11, killCost: 0.8, radius: 62, shieldSec: 0.6 },
-  K: { id: "K", boost: 1.5, boostSec: 2, minEffMass: 3.8, color: "#ffa24d", glow: "#ff7a1a", kind: "dwarf", remnantName: "Weak white dwarf", life: 6, killCost: 1.0, radius: 66, shieldSec: 1.0 },
+  K: { id: "K", boost: 1.5, boostSec: 2, minEffMass: 3.8, color: "#ffa24d", glow: "#ff7a1a", kind: "dwarf", remnantName: "Weak white dwarf", life: 5, killCost: 1.2, radius: 52, shieldSec: 1.0 },
   M: { id: "M", boost: 0.4, boostSec: 1.5, minEffMass: 0, color: "#ff8f7a", glow: "#ff5a4a", kind: "none", remnantName: "No remnant", life: 0, killCost: 0, radius: 0, shieldSec: 1.8 },
 };
 
@@ -130,12 +130,19 @@ export const REMNANT = {
     pull: 620,
     core: 48,
     /** The hole escorts the cloud: eased follow of a point `dist` away that slowly circles it. */
-    follow: { dist: 135, ease: 2.2, maxSpeed: 480, orbitSpin: 0.8 },
+    follow: { dist: 135, ease: 2.2, maxSpeed: 480, orbitSpin: 0.8, startAngle: 0 },
     /** Never drag hazards that are already this close to the cloud's edge across it. */
     safeGap: 45,
   },
   /** Neutron star beams. */
-  neutron: { beams: 2, beamLen: 190, beamWidth: 15, spin: 2.3 },
+  neutron: {
+    beams: 2,
+    beamLen: 190,
+    beamWidth: 15,
+    spin: 2.3,
+    /** The pulsar travels with the cloud, a little beside it, its beams sweeping around you. */
+    follow: { dist: 75, ease: 2.6, maxSpeed: 500, orbitSpin: 1.0, startAngle: Math.PI / 2 },
+  },
   /** A star: one-time shell clear then a small white dwarf aura. */
   clear: {
     /** Strike radius of the A-star dwarf (G patrol is 58, K weak is 66). */
@@ -155,7 +162,15 @@ export const REMNANT = {
   /** F star: satellites orbiting the player's cloud. */
   orbiter: { bodies: 2, orbit: 100, bodyRadius: 34, spin: 2.6 },
   /** G star: hunts the nearest obstacle. */
-  patroller: { speed: 260, quench: 58 },
+  patroller: {
+    speed: 260,
+    quench: 58,
+    /** Hunts only hazards within `leash` of the cloud; otherwise circles home beside it. */
+    leash: 240,
+    home: { dist: 85, ease: 3.0, orbitSpin: 1.6, startAngle: -Math.PI / 2 },
+  },
+  /** K star: a weak white dwarf that tags along slowly (lags behind a moving cloud, but never farther than `leash`). */
+  dwarf: { follow: { dist: 60, ease: 1.5, maxSpeed: 230, orbitSpin: 0.9, startAngle: (3 * Math.PI) / 2 }, leash: 220 },
   fadeOutSec: 0.8, // visual fade when evicted by the cap
 } as const;
 

@@ -26,6 +26,7 @@ import {
   START_LIVES,
   MAX_LIVES,
   PAW_REGAIN_TYPES,
+  type RemnantKind,
   STEP,
   WORLD_H,
   WORLD_W,
@@ -84,6 +85,8 @@ export type Remnant = {
   fade: number;
   /** A-star shell animation 0..1. */
   shell: number;
+  /** Escort angle around the cloud (radians); remnants never stay anchored where they were made. */
+  orbit: number;
   /** Where it was made (the A-star shell expands from here). */
   ox: number;
   oy: number;
@@ -112,6 +115,16 @@ export function chainMultiplier(idx: number): number {
 }
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
+function remnantStartAngle(kind: RemnantKind): number {
+  switch (kind) {
+    case "blackhole": return REMNANT.blackhole.follow.startAngle;
+    case "neutron": return REMNANT.neutron.follow.startAngle;
+    case "dwarf-clear": return REMNANT.clear.hunt.home.startAngle;
+    case "patroller": return REMNANT.patroller.home.startAngle;
+    case "dwarf": return REMNANT.dwarf.follow.startAngle;
+    default: return 0;
+  }
+}
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
 function segDist(px: number, py: number, ax: number, ay: number, bx: number, by: number) {
@@ -359,7 +372,8 @@ export class StarForm {
         life: spec.life,
         maxLife: spec.life,
         age: 0,
-        angle: spec.kind === "dwarf-clear" ? REMNANT.clear.hunt.home.startAngle : 0,
+        angle: 0,
+        orbit: remnantStartAngle(spec.kind),
         fade: 0,
         shell: 0,
         ox: c.x,
@@ -529,6 +543,30 @@ export class StarForm {
     }
   }
 
+  /** Eased, speed-capped follow of a point on a circle around the cloud (deterministic). */
+  private escort(r: Remnant, f: { dist: number; ease: number; maxSpeed: number; orbitSpin: number }, dt: number) {
+    const c = this.cloud;
+    r.orbit += f.orbitSpin * dt;
+    const gx = clamp(c.x + Math.cos(r.orbit) * f.dist, 30, WORLD_W - 30);
+    const gy = clamp(c.y + Math.sin(r.orbit) * f.dist, 30, WORLD_H - 30);
+    const d = Math.hypot(gx - r.x, gy - r.y);
+    if (d > 0.01) {
+      const mv = Math.min(d * (1 - Math.exp(-f.ease * dt)), f.maxSpeed * dt);
+      r.x += ((gx - r.x) / d) * mv;
+      r.y += ((gy - r.y) / d) * mv;
+    }
+  }
+
+  /** Keep a remnant within `leash` of the cloud. */
+  private leashTo(r: Remnant, leash: number) {
+    const c = this.cloud;
+    const d = Math.hypot(r.x - c.x, r.y - c.y);
+    if (d > leash) {
+      r.x = c.x + ((r.x - c.x) / d) * leash;
+      r.y = c.y + ((r.y - c.y) / d) * leash;
+    }
+  }
+
   private updateRemnants(dt: number) {
     const c = this.cloud;
     for (const r of [...this.remnants]) {
@@ -553,17 +591,8 @@ export class StarForm {
       switch (spec.kind) {
         case "blackhole": {
           const { pull, core, follow, safeGap } = REMNANT.blackhole;
-          // Lagging escort: ease toward a point beside the cloud that slowly circles it,
-          // so the hole trails the player without sitting on top of them.
-          r.angle += follow.orbitSpin * dt;
-          const gx = clamp(c.x + Math.cos(r.angle) * follow.dist, 30, WORLD_W - 30);
-          const gy = clamp(c.y + Math.sin(r.angle) * follow.dist, 30, WORLD_H - 30);
-          const fd = Math.hypot(gx - r.x, gy - r.y);
-          if (fd > 0.01) {
-            const mv = Math.min(fd * (1 - Math.exp(-follow.ease * dt)), follow.maxSpeed * dt);
-            r.x += ((gx - r.x) / fd) * mv;
-            r.y += ((gy - r.y) / fd) * mv;
-          }
+          // Lagging escort: trails the player without sitting on top of them.
+          this.escort(r, follow, dt);
           const hr = this.hitRadius();
           for (const o of live()) {
             const d = Math.hypot(r.x - o.x, r.y - o.y);
@@ -581,7 +610,8 @@ export class StarForm {
         }
         case "neutron": {
           const q = REMNANT.neutron;
-          r.angle += q.spin * dt;
+          r.angle += q.spin * dt; // beam spin
+          this.escort(r, q.follow, dt); // the pulsar itself travels with the cloud
           for (const o of live()) {
             const touched = anyPart(o, (p) => {
               if (Math.hypot(p.x - r.x, p.y - r.y) < 30 + p.r) return true;
@@ -610,31 +640,17 @@ export class StarForm {
               target = o;
             }
           }
-          let tx: number;
-          let ty: number;
-          let rate: number;
           if (target) {
-            tx = target.x;
-            ty = target.y;
-            rate = 9;
+            const td = Math.hypot(target.x - r.x, target.y - r.y);
+            if (td > 0.01) {
+              const mv = Math.min(q.speed * dt, td * 9 * dt);
+              r.x += ((target.x - r.x) / td) * mv;
+              r.y += ((target.y - r.y) / td) * mv;
+            }
           } else {
-            r.angle += q.home.orbitSpin * dt;
-            tx = clamp(c.x + Math.cos(r.angle) * q.home.dist, 30, WORLD_W - 30);
-            ty = clamp(c.y + Math.sin(r.angle) * q.home.dist, 30, WORLD_H - 30);
-            rate = q.home.ease * 3;
+            this.escort(r, { ...q.home, maxSpeed: q.speed }, dt);
           }
-          const td = Math.hypot(tx - r.x, ty - r.y);
-          if (td > 0.01) {
-            const mv = Math.min(q.speed * dt, td * rate * dt);
-            r.x += ((tx - r.x) / td) * mv;
-            r.y += ((ty - r.y) / td) * mv;
-          }
-          // leash: never farther than q.leash from the cloud
-          const ld = Math.hypot(r.x - c.x, r.y - c.y);
-          if (ld > q.leash) {
-            r.x = c.x + ((r.x - c.x) / ld) * q.leash;
-            r.y = c.y + ((r.y - c.y) / ld) * q.leash;
-          }
+          this.leashTo(r, q.leash);
           for (const o of live()) {
             if (anyPart(o, (p) => Math.hypot(p.x - r.x, p.y - r.y) < REMNANT.clear.auraRadius + p.r)) hit(o);
           }
@@ -662,23 +678,27 @@ export class StarForm {
         }
         case "patroller": {
           const q = REMNANT.patroller;
-          let tx = c.x;
-          let ty = c.y;
+          // Hunt the hazard nearest the cloud (within the leash); otherwise circle home beside it.
+          let target: Obstacle | null = null;
           let best = Infinity;
           for (const o of live()) {
-            const d = Math.hypot(o.x - r.x, o.y - r.y);
-            if (d < best) {
-              best = d;
-              tx = o.x;
-              ty = o.y;
+            const cd = Math.hypot(o.x - c.x, o.y - c.y);
+            if (cd < q.leash && cd < best) {
+              best = cd;
+              target = o;
             }
           }
-          const d = Math.hypot(tx - r.x, ty - r.y);
-          if (d > 1) {
-            const v = Math.min(q.speed, d * 6);
-            r.x += ((tx - r.x) / d) * v * dt;
-            r.y += ((ty - r.y) / d) * v * dt;
+          if (target) {
+            const d = Math.hypot(target.x - r.x, target.y - r.y);
+            if (d > 1) {
+              const v = Math.min(q.speed, d * 6);
+              r.x += ((target.x - r.x) / d) * v * dt;
+              r.y += ((target.y - r.y) / d) * v * dt;
+            }
+          } else {
+            this.escort(r, { ...q.home, maxSpeed: q.speed }, dt);
           }
+          this.leashTo(r, q.leash);
           r.angle += 2 * dt;
           for (const o of live()) {
             if (anyPart(o, (p) => Math.hypot(p.x - r.x, p.y - r.y) < q.quench + p.r)) hit(o);
@@ -686,6 +706,8 @@ export class StarForm {
           break;
         }
         case "dwarf": {
+          this.escort(r, REMNANT.dwarf.follow, dt);
+          this.leashTo(r, REMNANT.dwarf.leash);
           for (const o of live()) {
             if (anyPart(o, (p) => Math.hypot(p.x - r.x, p.y - r.y) < spec.radius + p.r)) hit(o);
           }

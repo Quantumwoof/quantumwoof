@@ -254,11 +254,43 @@ export function HoskyStarForm() {
     setCompressUi({ held, latched });
   }, []);
 
+  // A new service worker takes over (skipWaiting + clientsClaim): reload onto the fresh game
+  // code, but never mid-run — wait until the run ends.
+  const phaseRef = useRef(phase);
+  const swPendingRef = useRef(false);
+  useEffect(() => {
+    phaseRef.current = phase;
+    if (phase !== "playing" && swPendingRef.current) window.location.reload();
+  }, [phase]);
+  useEffect(() => {
+    const sw = typeof navigator !== "undefined" ? navigator.serviceWorker : undefined;
+    if (!sw || !sw.controller) return; // first install: nothing stale to replace
+    const onChange = () => {
+      if (phaseRef.current === "playing") swPendingRef.current = true;
+      else window.location.reload();
+    };
+    sw.addEventListener("controllerchange", onChange);
+    return () => sw.removeEventListener("controllerchange", onChange);
+  }, []);
+
   const start = useCallback(() => {
     const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
     gameRef.current = new StarForm(randomSeed());
     // Dev/test hook only (never set in production builds).
     if (process.env.NODE_ENV !== "production") (window as unknown as { __sf?: StarForm }).__sf = gameRef.current;
+    // Read-only position probe for live verification (`?sfdebug=1`); changes nothing in the game.
+    if (new URLSearchParams(window.location.search).has("sfdebug")) {
+      const gg = gameRef.current;
+      (window as unknown as { __sfDebug?: () => unknown }).__sfDebug = () => ({
+        t: gg.t,
+        cloud: { x: gg.cloud.x, y: gg.cloud.y, mass: gg.cloud.mass },
+        type: gg.currentType(),
+        canDet: gg.canDetonate(),
+        remnants: gg.remnants.map((r) => ({ type: r.type, x: r.x, y: r.y, life: r.life })),
+        gas: gg.gas.map((q) => ({ x: q.x, y: q.y })),
+        obstacles: gg.obstacles.length,
+      });
+    }
     fxRef.current = createFx(reduced);
     overAtRef.current = null;
     hudKeyRef.current = "";
@@ -569,7 +601,7 @@ export function HoskyStarForm() {
             <ul className="space-y-1.5 text-sm text-slate">
               <li>You cruise through the Milky Way and <span className="text-electric">distance</span> is your score. It rolls up from light-seconds to light-years (a <em>game scale</em>, not real physics).</li>
               <li><span className="text-electric">Drag</span> to steer your gas cloud and swallow the smoke wisps. Gas is always safe. <span className="text-electric">Hold</span> COMPRESS (or tap to toggle) to pack mass in — a loose cloud slowly leaks it, and a bigger cloud needs more gas to grow.</li>
-              <li><span className="text-gold">DETONATE</span> to make a star: it gives a <span className="text-gold">speed boost</span> that fades over a few seconds — bigger stars boost far more — and leaves a remnant that destroys hazards. An <span className="text-gold">O star</span>&rsquo;s black hole follows you, a little behind, and swallows hazards near it &mdash; it never pulls in you or your gas. An <span className="text-gold">A star</span> clears a ring of hazards, then its white dwarf hunts the nearest threat for you (fast, strong, and always staying close). Each remnant wears a name tag while it lasts.</li>
+              <li><span className="text-gold">DETONATE</span> to make a star: it gives a <span className="text-gold">speed boost</span> that fades over a few seconds — bigger stars boost far more — and leaves a remnant that destroys hazards. An <span className="text-gold">O star</span>&rsquo;s black hole follows you, a little behind, and swallows hazards near it &mdash; it never pulls in you or your gas. An <span className="text-gold">A star</span> clears a ring of hazards, then its white dwarf hunts the nearest threat for you (fast, strong, and always staying close). Every remnant travels with you, never staying where it was made: B&rsquo;s neutron star sweeps its beams beside you, F&rsquo;s guardians orbit you, G&rsquo;s patrol dwarf hunts nearby hazards, and K&rsquo;s weak dwarf tags along. Each wears a name tag while it lasts.</li>
               <li>Chain detonations within {COMBO_WINDOW_SEC}s to scale the boost up to ×{COMBO_STEPS[COMBO_STEPS.length - 1]}. Small stars (M, K, G) also grant a short shield.</li>
               <li><span className="text-rose-300">Red-ringed</span> stars, their planets, rogue stars and runaway stars cost a Hosky paw 🐾 (you blink and are safe for a few seconds after). You start with {START_LIVES}; lose them all and the run ends. Detonating a <span className="text-gold">B or O star</span> wins one paw back, up to {MAX_LIVES}.</li>
             </ul>
