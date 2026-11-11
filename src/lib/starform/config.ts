@@ -97,12 +97,12 @@ export type SpectralSpec = {
 };
 
 export const SPECTRAL: Record<SpectralId, SpectralSpec> = {
-  O: { id: "O", boost: 520, boostSec: 10, minEffMass: 57, color: "#6fa8ff", glow: "#3b6dff", kind: "blackhole", remnantName: "Black hole", life: 15, killCost: 0.45, radius: 200, shieldSec: 0 },
-  B: { id: "B", boost: 320, boostSec: 8, minEffMass: 48, color: "#a8d8ff", glow: "#5fb4ff", kind: "neutron", remnantName: "Neutron star", life: 13, killCost: 0.7, radius: 170, shieldSec: 0 },
-  A: { id: "A", boost: 80, boostSec: 6, minEffMass: 29, color: "#f2f6ff", glow: "#b9c8ff", kind: "dwarf-clear", remnantName: "White dwarf + shell", life: 14, killCost: 0.3, radius: 420, shieldSec: 0 },
-  F: { id: "F", boost: 16, boostSec: 4, minEffMass: 15, color: "#fff2b8", glow: "#ffe27a", kind: "orbiter", remnantName: "Guardian white dwarf", life: 12, killCost: 0.8, radius: 105, shieldSec: 0 },
-  G: { id: "G", boost: 3, boostSec: 3, minEffMass: 8.5, color: "#ffd84a", glow: "#ffb800", kind: "patroller", remnantName: "Patrol white dwarf", life: 11, killCost: 0.8, radius: 62, shieldSec: 0.6 },
-  K: { id: "K", boost: 1.5, boostSec: 2, minEffMass: 3.8, color: "#ffa24d", glow: "#ff7a1a", kind: "dwarf", remnantName: "Weak white dwarf", life: 5, killCost: 1.2, radius: 52, shieldSec: 1.0 },
+  O: { id: "O", boost: 520, boostSec: 10, minEffMass: 57, color: "#6fa8ff", glow: "#3b6dff", kind: "blackhole", remnantName: "Black hole", life: 22, killCost: 0.28, radius: 430, shieldSec: 0 },
+  B: { id: "B", boost: 320, boostSec: 8, minEffMass: 48, color: "#a8d8ff", glow: "#5fb4ff", kind: "neutron", remnantName: "Neutron star", life: 17, killCost: 0.4, radius: 330, shieldSec: 0 },
+  A: { id: "A", boost: 80, boostSec: 6, minEffMass: 29, color: "#f2f6ff", glow: "#b9c8ff", kind: "dwarf-clear", remnantName: "White dwarf + shell", life: 14, killCost: 0.42, radius: 420, shieldSec: 0 },
+  F: { id: "F", boost: 16, boostSec: 4, minEffMass: 15, color: "#fff2b8", glow: "#ffe27a", kind: "orbiter", remnantName: "Guardian white dwarf", life: 12, killCost: 0.7, radius: 100, shieldSec: 0 },
+  G: { id: "G", boost: 4, boostSec: 3, minEffMass: 8.5, color: "#ffd84a", glow: "#ffb800", kind: "patroller", remnantName: "Patrol white dwarf", life: 10, killCost: 0.9, radius: 56, shieldSec: 0.6 },
+  K: { id: "K", boost: 1.0, boostSec: 2, minEffMass: 3.8, color: "#ffa24d", glow: "#ff7a1a", kind: "dwarf", remnantName: "Weak white dwarf", life: 7, killCost: 1.3, radius: 40, shieldSec: 1.0 },
   M: { id: "M", boost: 0.4, boostSec: 1.5, minEffMass: 0, color: "#ff8f7a", glow: "#ff5a4a", kind: "none", remnantName: "No remnant", life: 0, killCost: 0, radius: 0, shieldSec: 1.8 },
 };
 
@@ -125,52 +125,80 @@ export const LS_PER_LY = 31_557_600;
 export const MAX_REMNANTS = 3; // effects stack; the oldest fades when a 4th is made
 
 export const REMNANT = {
-  /** Black hole: pull strength (units/s at the centre, fades to 0 at the rim) and event horizon. */
-  blackhole: {
-    pull: 620,
-    core: 48,
-    /** The hole escorts the cloud: eased follow of a point `dist` away that slowly circles it. */
-    follow: { dist: 135, ease: 2.2, maxSpeed: 480, orbitSpin: 0.8, startAngle: 0 },
-    /** Never drag hazards that are already this close to the cloud's edge across it. */
-    safeGap: 45,
+  /**
+   * Remnants are HUNTERS: each roams the arena after the hazards, with a loose `leash`
+   * (from the cloud) so it stays in play, and circles `home` beside you when nothing is
+   * left to chase. Power rises strictly K < G < F < A < B < O in life, speed, reach and
+   * kill rate (see the table in the how-to / report). Remnants never touch gas or the player.
+   * Targets are scored by distance to the hunter plus `threatBias` × distance to the cloud.
+   */
+  threatBias: 0.35,
+  /** K: weak white dwarf — slow, short reach, short life. */
+  dwarf: {
+    speed: 190,
+    strike: 40,
+    leash: 340,
+    home: { dist: 70, ease: 2.0, orbitSpin: 0.9, startAngle: (3 * Math.PI) / 2 },
   },
-  /** Neutron star beams. */
-  neutron: {
-    beams: 2,
-    beamLen: 190,
-    beamWidth: 15,
-    spin: 2.3,
-    /** The pulsar travels with the cloud, a little beside it, its beams sweeping around you. */
-    follow: { dist: 75, ease: 2.6, maxSpeed: 500, orbitSpin: 1.0, startAngle: Math.PI / 2 },
+  /** G: patrol white dwarf. */
+  patroller: {
+    speed: 290,
+    quench: 56,
+    leash: 440,
+    home: { dist: 85, ease: 3.0, orbitSpin: 1.6, startAngle: -Math.PI / 2 },
   },
-  /** A star: one-time shell clear then a small white dwarf aura. */
+  /** F: guardian white dwarf — hunts with two satellites circling it, so its reach is wide. */
+  orbiter: {
+    bodies: 2,
+    orbit: 62,
+    bodyRadius: 32,
+    spin: 3.0,
+    speed: 360,
+    leash: 540,
+    home: { dist: 95, ease: 3.0, orbitSpin: 1.2, startAngle: 0 },
+  },
+  /** A: one-time shell clear at detonation, then a fast, long-reach hunter. */
   clear: {
-    /** Strike radius of the A-star dwarf (G patrol is 58, K weak is 66). */
-    auraRadius: 84,
-    /**
-     * The A-star dwarf is a leashed hunter: it chases the hazard closest to the cloud
-     * (faster and farther than the G patrol), never strays past `leash`, and when
-     * nothing threatens you it circles the cloud at `home.dist`, the other way round
-     * from the black hole and F's guardians.
-     */
+    auraRadius: 100,
     hunt: {
-      speed: 500,
-      leash: 300,
+      speed: 520,
+      leash: 680,
       home: { dist: 105, ease: 3.0, orbitSpin: -1.3, startAngle: Math.PI },
     },
   },
-  /** F star: satellites orbiting the player's cloud. */
-  orbiter: { bodies: 2, orbit: 100, bodyRadius: 34, spin: 2.6 },
-  /** G star: hunts the nearest obstacle. */
-  patroller: {
-    speed: 260,
-    quench: 58,
-    /** Hunts only hazards within `leash` of the cloud; otherwise circles home beside it. */
-    leash: 240,
-    home: { dist: 85, ease: 3.0, orbitSpin: 1.6, startAngle: -Math.PI / 2 },
+  /**
+   * B: neutron star — drifts toward obstacle clusters, gravitationally draws nearby
+   * hazards in (never the player's cloud or gas) and destroys whatever touches it; its
+   * rotating beams also kill.
+   */
+  neutron: {
+    beams: 2,
+    beamLen: 220,
+    beamWidth: 18,
+    spin: 2.6,
+    core: 38,
+    speed: 270,
+    leash: 780,
+    pull: 330,
+    pullRadius: 330,
+    home: { dist: 110, ease: 2.4, orbitSpin: 1.0, startAngle: Math.PI / 2 },
   },
-  /** K star: a weak white dwarf that tags along slowly (lags behind a moving cloud, but never farther than `leash`). */
-  dwarf: { follow: { dist: 60, ease: 1.5, maxSpeed: 230, orbitSpin: 0.9, startAngle: (3 * Math.PI) / 2 }, leash: 220 },
+  /**
+   * O: black hole — strongest pull, swallows hazards at the horizon, and fires homing jets
+   * at distant hazards. Keeps `minGap` from the player and never drags a hazard across them.
+   */
+  blackhole: {
+    core: 56,
+    pull: 860,
+    pullRadius: 430,
+    speed: 240,
+    leash: 900,
+    minGap: 190,
+    /** Never pull hazards already this close to the cloud's edge. */
+    safeGap: 45,
+    jet: { every: 1.0, count: 2, minRange: 140, range: 850, speed: 1150, radius: 18, life: 1.4, cost: 0.2 },
+    home: { dist: 220, ease: 2.2, orbitSpin: 0.8, startAngle: 0 },
+  },
   fadeOutSec: 0.8, // visual fade when evicted by the cap
 } as const;
 

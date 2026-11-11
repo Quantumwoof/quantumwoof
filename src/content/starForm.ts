@@ -5,17 +5,17 @@ export const STAR_TEACH: Record<SpectralId, { name: string; fact: string; remnan
   O: {
     name: "Blue giant",
     fact: "O stars are 16+ times the Sun's mass, burn blue-hot and live only a few million years.",
-    remnant: "Their cores collapse into black holes (or neutron stars) in a supernova. In the game your black hole trails you like an escort, swallowing hazards near it — it never pulls in you or your gas.",
+    remnant: "Their cores collapse into black holes (or neutron stars) in a supernova. In the game your black hole drags hazards in, swallows them and fires jets at distant ones — never at you or your gas.",
   },
   B: {
     name: "Blue-white star",
     fact: "B stars (about 2–16 Suns) shine fiercely, like Spica, and live tens of millions of years.",
-    remnant: "The heavier ones explode and leave a neutron star — some spin as pulsars that sweep beams across space.",
+    remnant: "The heavier ones explode and leave a neutron star — some spin as pulsars that sweep beams across space. In the game it drifts toward hazard clusters, pulls them in and cuts them down.",
   },
   A: {
     name: "White star",
     fact: "A stars like Sirius A and Vega are about 1.4–2 Suns and burn white for around a billion years.",
-    remnant: "They puff off their outer layers as a glowing shell, then settle as a white dwarf (Sirius B is one). In the game it hunts nearby hazards for you, on a leash.",
+    remnant: "They puff off their outer layers as a glowing shell, then settle as a white dwarf (Sirius B is one). In the game it hunts hazards across the arena for you.",
   },
   F: {
     name: "Yellow-white star",

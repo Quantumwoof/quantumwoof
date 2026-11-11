@@ -218,6 +218,9 @@ export function applyEvents(fx: Fx, events: GameEvent[]) {
         burst(fx, ev.x, ev.y, "#9fe8ff", 3, 70, 0.4, 1.8);
         puff(fx, ev.x, ev.y, "#9fe8ff", 34, 20, 0.5, 0.35, 0.6);
         break;
+      case "jet":
+        burst(fx, ev.x, ev.y, "#8fc0ff", 6, 120, 0.3, 2);
+        break;
       case "paw":
         fx.floaters.push({ x: ev.x, y: ev.y - 70, text: "+1 paw 🐾", color: "#9dffb0", life: 1.9, big: false, note: false });
         burst(fx, ev.x, ev.y, "#9dffb0", 14, 150, 0.7, 2.4);
@@ -513,7 +516,7 @@ function labelOffset(r: Remnant): number {
   switch (SPECTRAL[r.type].kind) {
     case "blackhole": return REMNANT.blackhole.core * 0.75 + 30;
     case "neutron": return 50;
-    case "orbiter": return REMNANT.orbiter.orbit + REMNANT.orbiter.bodyRadius + 28;
+    case "orbiter": return REMNANT.orbiter.orbit + REMNANT.orbiter.bodyRadius + 26;
     case "dwarf-clear": return 44;
     case "patroller": return 50;
     default: return 36;
@@ -592,6 +595,13 @@ function drawRemnant(ctx: CanvasRenderingContext2D, r: Remnant, g: StarForm, t: 
     }
     case "neutron": {
       const q = REMNANT.neutron;
+      ctx.setLineDash([4, 12]);
+      ctx.strokeStyle = hexA("#8fd0ff", 0.22);
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(r.x, r.y, q.pullRadius, 0, 6.3);
+      ctx.stroke();
+      ctx.setLineDash([]);
       ctx.globalCompositeOperation = "lighter";
       for (let i = 0; i < q.beams * 2; i++) {
         const a = r.angle + (i * Math.PI) / q.beams;
@@ -637,16 +647,21 @@ function drawRemnant(ctx: CanvasRenderingContext2D, r: Remnant, g: StarForm, t: 
     }
     case "orbiter": {
       const q = REMNANT.orbiter;
-      const cx = g.cloud.x;
-      const cy = g.cloud.y;
-      const orbit = q.orbit + g.radius() * 0.5;
+      const cx = r.x;
+      const cy = r.y;
+      const orbit = q.orbit;
       ctx.setLineDash([4, 10]);
-      ctx.strokeStyle = hexA("#ffe27a", 0.22);
+      ctx.strokeStyle = hexA("#ffe27a", 0.3);
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.arc(cx, cy, orbit, 0, 6.3);
       ctx.stroke();
       ctx.setLineDash([]);
+      glow(ctx, cx, cy, 50, "#ffe27a", 0.5);
+      ctx.fillStyle = "#fffbe0";
+      ctx.beginPath();
+      ctx.arc(cx, cy, 10, 0, 6.3);
+      ctx.fill();
       for (let i = 0; i < q.bodies; i++) {
         const a = r.angle + (i * Math.PI * 2) / q.bodies;
         const bx = cx + Math.cos(a) * orbit;
@@ -683,7 +698,7 @@ function drawRemnant(ctx: CanvasRenderingContext2D, r: Remnant, g: StarForm, t: 
       break;
     }
     case "dwarf": {
-      glow(ctx, r.x, r.y, spec.radius * 1.2, "#ff7a1a", 0.35);
+      glow(ctx, r.x, r.y, REMNANT.dwarf.strike * 1.8, "#ff7a1a", 0.35);
       ctx.fillStyle = "#ffd0a0";
       ctx.beginPath();
       ctx.arc(r.x, r.y, 8, 0, 6.3);
@@ -691,7 +706,7 @@ function drawRemnant(ctx: CanvasRenderingContext2D, r: Remnant, g: StarForm, t: 
       ctx.setLineDash([5, 7]);
       ctx.strokeStyle = hexA("#ffa24d", 0.45);
       ctx.beginPath();
-      ctx.arc(r.x, r.y, spec.radius, 0, 6.3);
+      ctx.arc(r.x, r.y, REMNANT.dwarf.strike, 0, 6.3);
       ctx.stroke();
       ctx.setLineDash([]);
       lifeArc(ctx, r.x, r.y, 17, frac, "#ffa24d", alpha);
@@ -808,6 +823,29 @@ export function draw(ctx: CanvasRenderingContext2D, g: StarForm, fx: Fx, o: Draw
 
   // remnants (under the cloud)
   for (const r of g.remnants) drawRemnant(ctx, r, g, t);
+  // black-hole jets
+  if (g.shots.length) {
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    ctx.lineCap = "round";
+    for (const sh of g.shots) {
+      const sp = Math.hypot(sh.vx, sh.vy) || 1;
+      const len = 46;
+      ctx.strokeStyle = "rgba(130,190,255,0.9)";
+      ctx.lineWidth = 6;
+      ctx.beginPath();
+      ctx.moveTo(sh.x - (sh.vx / sp) * len, sh.y - (sh.vy / sp) * len);
+      ctx.lineTo(sh.x, sh.y);
+      ctx.stroke();
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(sh.x - (sh.vx / sp) * len * 0.5, sh.y - (sh.vy / sp) * len * 0.5);
+      ctx.lineTo(sh.x, sh.y);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
 
   // obstacles: stars, planets, rogue stars and runaway stars
   for (const ob of g.obstacles) drawObstacle(ctx, ob, t);

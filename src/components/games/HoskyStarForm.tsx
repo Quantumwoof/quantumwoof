@@ -194,7 +194,7 @@ export function HoskyStarForm() {
   const pushHud = useCallback((g: StarForm) => {
     const type = g.currentType();
     const idx = SPECTRAL_ORDER.indexOf(type);
-    const eff = g.effMass();
+    const eff = g.rankedEff();
     const cur = type === "M" ? 0 : SPECTRAL[type].minEffMass;
     const next = idx > 0 ? SPECTRAL[SPECTRAL_ORDER[idx - 1]].minEffMass : cur;
     const progress = idx === 0 ? 1 : Math.max(0, Math.min(1, (eff - cur) / (next - cur)));
@@ -288,7 +288,9 @@ export function HoskyStarForm() {
         canDet: gg.canDetonate(),
         remnants: gg.remnants.map((r) => ({ type: r.type, x: r.x, y: r.y, life: r.life })),
         gas: gg.gas.map((q) => ({ x: q.x, y: q.y })),
-        obstacles: gg.obstacles.length,
+        obstacles: gg.obstacles.filter((o) => o.warn <= 0).map((o) => ({ x: o.x, y: o.y })),
+        kills: gg.kills,
+        shots: gg.shots.length,
       });
     }
     fxRef.current = createFx(reduced);
@@ -356,7 +358,7 @@ export function HoskyStarForm() {
       const idx = SPECTRAL_ORDER.indexOf(type);
       const cur = type === "M" ? 0 : SPECTRAL[type].minEffMass;
       const nxt = idx > 0 ? SPECTRAL[SPECTRAL_ORDER[idx - 1]].minEffMass : cur;
-      const progress = idx === 0 ? 1 : Math.max(0, Math.min(1, (g.effMass() - cur) / (nxt - cur)));
+      const progress = idx === 0 ? 1 : Math.max(0, Math.min(1, (g.rankedEff() - cur) / (nxt - cur)));
       draw(ctx, g, fx, sizeRef.current, type, progress);
       pushHud(g);
 
@@ -601,7 +603,7 @@ export function HoskyStarForm() {
             <ul className="space-y-1.5 text-sm text-slate">
               <li>You cruise through the Milky Way and <span className="text-electric">distance</span> is your score. It rolls up from light-seconds to light-years (a <em>game scale</em>, not real physics).</li>
               <li><span className="text-electric">Drag</span> to steer your gas cloud and swallow the smoke wisps. Gas is always safe. <span className="text-electric">Hold</span> COMPRESS (or tap to toggle) to pack mass in — a loose cloud slowly leaks it, and a bigger cloud needs more gas to grow.</li>
-              <li><span className="text-gold">DETONATE</span> to make a star: it gives a <span className="text-gold">speed boost</span> that fades over a few seconds — bigger stars boost far more — and leaves a remnant that destroys hazards. An <span className="text-gold">O star</span>&rsquo;s black hole follows you, a little behind, and swallows hazards near it &mdash; it never pulls in you or your gas. An <span className="text-gold">A star</span> clears a ring of hazards, then its white dwarf hunts the nearest threat for you (fast, strong, and always staying close). Every remnant travels with you, never staying where it was made: B&rsquo;s neutron star sweeps its beams beside you, F&rsquo;s guardians orbit you, G&rsquo;s patrol dwarf hunts nearby hazards, and K&rsquo;s weak dwarf tags along. Each wears a name tag while it lasts.</li>
+              <li><span className="text-gold">DETONATE</span> to make a star: it gives a <span className="text-gold">speed boost</span> that fades over a few seconds — bigger stars boost far more — and leaves a remnant that <span className="text-gold">hunts hazards</span> for you. Remnants roam the arena and get stronger up the ladder — K, G, F, A, then B and O: B&rsquo;s neutron star drifts toward crowds, pulls hazards in and cuts them down with its beams; O&rsquo;s black hole pulls hardest, swallows what reaches it and fires jets at distant hazards. A&rsquo;s white dwarf clears a ring first, then hunts. None of them ever touch you or your gas, and each wears a name tag while it lasts. Your star type never drops back once reached &mdash; releasing COMPRESS or taking a hit won&rsquo;t downgrade it.</li>
               <li>Chain detonations within {COMBO_WINDOW_SEC}s to scale the boost up to ×{COMBO_STEPS[COMBO_STEPS.length - 1]}. Small stars (M, K, G) also grant a short shield.</li>
               <li><span className="text-rose-300">Red-ringed</span> stars, their planets, rogue stars and runaway stars cost a Hosky paw 🐾 (you blink and are safe for a few seconds after). You start with {START_LIVES}; lose them all and the run ends. Detonating a <span className="text-gold">B or O star</span> wins one paw back, up to {MAX_LIVES}.</li>
             </ul>

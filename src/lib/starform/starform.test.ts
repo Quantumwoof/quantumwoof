@@ -4,6 +4,47 @@ import { DistanceTracker, formatDistance, simulateDistance } from "./distance";
 import { StarForm, classify, partsOf } from "./engine";
 import { elapsedLooksRight, parseRun, sanitizeName, verifyRun, type RunDet } from "./validate";
 
+
+const KILL_MASS: Record<string, number> = { K: 3, G: 7, F: 12, A: 20, B: 32, O: 60 };
+/** Fixed scenario: parked invulnerable cloud, one drifter every 0.4 s for 30 s; kills by `type`'s remnant. */
+function killsInStream(type: SpectralId): number {
+  const g = new StarForm(21);
+  g.obstacles.length = 0;
+  g.cloud.invuln = 1e9;
+  g.cloud.x = 400;
+  g.cloud.y = 620;
+  g.input.tx = 400;
+  g.input.ty = 620;
+  g.cloud.mass = KILL_MASS[type];
+  g.cloud.comp = 1;
+  g.detonate();
+  g.drain();
+  let kills = 0;
+  let spawned = 0;
+  let t = 0;
+  let next = 0.4;
+  let sid = 1_000_000;
+  while (t < 40) {
+    if (t >= next && t < 30) {
+      const a = spawned * 2.399963;
+      const x = 400 + Math.cos(a) * 400;
+      const y = 620 + Math.sin(a) * 400;
+      const tx = 400 + Math.cos(a + 1) * 120;
+      const ty = 620 + Math.sin(a + 1) * 120;
+      const d = Math.hypot(tx - x, ty - y);
+      g.obstacles.push({ id: sid++, kind: "drifter", style: spawned % 3, planets: [], x: Math.max(30, Math.min(770, x)), y: Math.max(30, Math.min(970, y)), vx: ((tx - x) / d) * 110, vy: ((ty - y) / d) * 110, r: 22, age: 0, warn: 0, heading: 0, phase: 0 });
+      spawned++;
+      next += 0.4;
+    }
+    g.obstacles = g.obstacles.filter((o) => o.id >= 1_000_000);
+    g.step();
+    t += STEP;
+    for (const e of g.drain()) if (e.e === "kill" && e.by === type) kills++;
+    if (t > 0.5 && !g.remnants.some((r) => r.type === type)) break;
+  }
+  return kills;
+}
+
 function snapshot(seed: number, seconds: number) {
   const g = new StarForm(seed);
   const out: string[] = [];
@@ -150,33 +191,125 @@ describe("star form engine", () => {
     expect(Math.abs(d - q.home.dist)).toBeLessThan(25);
   });
 
-  test("every remnant travels with the player instead of staying where it was made", () => {
-    const cases: [SpectralId, number][] = [["O", 60], ["B", 32], ["A", 20], ["F", 12], ["G", 7], ["K", 3]];
-    for (const [type, mass] of cases) {
+  test("star type ratchets: it never drops back within a cloud, and a new cloud starts again", () => {
+    const g = new StarForm(14);
+    g.obstacles.length = 0;
+    g.cloud.invuln = 9999;
+    g.cloud.mass = 20; // A once compressed
+    g.cloud.comp = 1;
+    g.input.compress = true;
+    g.step();
+    expect(g.currentType()).toBe("A");
+    // release compress, leak mass, lose mass to a hit: still A
+    g.input.compress = false;
+    for (let i = 0; i < 60 * 8; i++) {
+      g.obstacles.length = 0;
+      g.step();
+    }
+    expect(g.cloud.comp).toBeLessThan(0.5);
+    expect(classify(g.effMass())).not.toBe("A");
+    expect(g.currentType()).toBe("A");
+    g.cloud.mass *= 0.65;
+    g.step();
+    expect(g.currentType()).toBe("A");
+    // detonating gives the ratcheted star, then the next cloud is back at M
+    const det = g.detonate();
+    expect(det?.k).toBe("A");
+    expect(g.currentType()).toBe("M");
+    expect(g.cloud.peakEff).toBe(0);
+  });
+
+  test("remnants hunt: each one chases a hazard, stays within its leash, and idles beside the cloud", () => {
+    const leash: Record<string, number> = {
+      K: REMNANT.dwarf.leash,
+      G: REMNANT.patroller.leash,
+      F: REMNANT.orbiter.leash,
+      A: REMNANT.clear.hunt.leash,
+      B: REMNANT.neutron.leash,
+      O: REMNANT.blackhole.leash,
+    };
+    for (const [type, mass] of Object.entries(KILL_MASS) as [SpectralId, number][]) {
       const g = new StarForm(12);
       g.obstacles.length = 0;
       g.cloud.invuln = 9999;
       g.cloud.mass = mass;
       g.cloud.comp = 1;
       g.detonate();
-      const r = g.remnants.find((x) => x.type === type);
+      const r = g.remnants.find((x) => x.type === type)!;
       expect(r).toBeDefined();
-      if (!r) continue;
-      const origin = { x: r.ox, y: r.oy };
-      g.input.compress = false;
-      let moved = 0;
-      for (let i = 0; i < 60 * 4; i++) {
-        g.obstacles.length = 0;
-        // sweep the cloud across the arena
-        g.input.tx = i % 240 < 120 ? 90 : 700;
-        g.input.ty = i % 240 < 120 ? 140 : 800;
+      // a slow drifter far from the cloud: the remnant should leave its spot to go after it
+      g.obstacles.push({ id: 970, kind: "drifter", style: 0, planets: [], x: g.cloud.x + 250, y: g.cloud.y - 150, vx: 0, vy: 0, r: 22, age: 0, warn: 0, heading: 0, phase: 0 });
+      let maxFromCloud = 0;
+      for (let i = 0; i < 60 * 3; i++) {
+        g.input.tx = g.cloud.x;
         g.step();
-        moved = Math.max(moved, Math.hypot(r.x - origin.x, r.y - origin.y));
+        maxFromCloud = Math.max(maxFromCloud, Math.hypot(r.x - g.cloud.x, r.y - g.cloud.y));
       }
-      const toCloud = Math.hypot(r.x - g.cloud.x, r.y - g.cloud.y);
-      expect(`${type} moved ${moved > 150}`).toBe(`${type} moved true`);
-      expect(`${type} near ${toCloud < 330}`).toBe(`${type} near true`);
+      expect(`${type} sought ${g.obstacles.find((o) => o.id === 970) === undefined}`).toBe(`${type} sought true`);
+      expect(maxFromCloud).toBeLessThanOrEqual(leash[type] + 1);
     }
+  });
+
+  test("power ladder: kills in a fixed hazard stream strictly increase K < G < F < A < B < O", () => {
+    const kills = (["K", "G", "F", "A", "B", "O"] as SpectralId[]).map((t) => killsInStream(t));
+    for (let i = 1; i < kills.length; i++) expect(kills[i]).toBeGreaterThan(kills[i - 1]);
+    // life and reach also rise up the ladder
+    const order: SpectralId[] = ["K", "G", "F", "A", "B", "O"];
+    for (let i = 1; i < order.length; i++) expect(SPECTRAL[order[i]].life).toBeGreaterThan(SPECTRAL[order[i - 1]].life);
+  });
+
+  test("black hole: keeps its distance from the cloud, never touches gas, fires jets that kill", () => {
+    const g = new StarForm(15);
+    g.obstacles.length = 0;
+    g.cloud.invuln = 9999;
+    g.cloud.mass = 60;
+    g.cloud.comp = 1;
+    g.detonate();
+    const bh = g.remnants.find((r) => r.type === "O")!;
+    g.gas.length = 0;
+    for (let i = 0; i < 6; i++) g.gas.push({ id: 7000 + i, x: 650 + i * 12, y: 150, vx: 0, vy: 0, age: 0, pulled: false });
+    const gasPos = g.gas.map((q) => `${q.x},${q.y}`);
+    let minGap = Infinity;
+    let jets = 0;
+    let by = 0;
+    for (let i = 0; i < 60 * 6; i++) {
+      // distant hazards in range for the jets, parked so only jets/pull can reach them
+      if (i % 30 === 0) g.obstacles.push({ id: 980 + i, kind: "drifter", style: 0, planets: [], x: g.cloud.x - 330, y: g.cloud.y - 380 + (i % 90), vx: 0, vy: 0, r: 22, age: 0, warn: 0, heading: 0, phase: 0 });
+      g.step();
+      for (const e of g.drain()) {
+        if (e.e === "jet") jets++;
+        if (e.e === "kill" && e.by === "O") by++;
+      }
+      if (i > 60) minGap = Math.min(minGap, Math.hypot(bh.x - g.cloud.x, bh.y - g.cloud.y));
+    }
+    expect(jets).toBeGreaterThan(0);
+    expect(by).toBeGreaterThan(2);
+    expect(minGap).toBeGreaterThan(REMNANT.blackhole.minGap - 15);
+    // gas is never pulled or removed by the hole (these wisps sit still, out of the cloud's reach)
+    expect(g.gas.filter((q) => q.id >= 7000).map((q) => `${q.x},${q.y}`).sort()).toEqual([...gasPos].sort());
+  });
+
+  test("neutron star pulls hazards toward itself", () => {
+    const g = new StarForm(16);
+    g.obstacles.length = 0;
+    g.cloud.invuln = 9999;
+    g.cloud.mass = 32;
+    g.cloud.comp = 1;
+    g.detonate();
+    const ns = g.remnants.find((r) => r.type === "B")!;
+    ns.x = 200;
+    ns.y = 200;
+    g.cloud.x = 650;
+    g.cloud.y = 850;
+    g.input.tx = 650;
+    g.input.ty = 850;
+    const o = { id: 990, kind: "drifter" as const, style: 0, planets: [], x: 200 + 280, y: 200, vx: 0, vy: 0, r: 22, age: 0, warn: 0, heading: 0, phase: 0 };
+    g.obstacles.push(o);
+    const d0 = Math.hypot(o.x - ns.x, o.y - ns.y);
+    g.step();
+    const d1 = Math.hypot(o.x - ns.x, o.y - ns.y);
+    // pulled in (the hunter also moves toward it, so the gap shrinks either way)
+    expect(d1).toBeLessThan(d0 - 2);
   });
 
   test("steering speed does not depend on mass or run time", () => {
