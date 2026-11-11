@@ -568,7 +568,7 @@ export function HoskyStarForm() {
             <ul className="space-y-1.5 text-sm text-slate">
               <li>You cruise through the Milky Way and <span className="text-electric">distance</span> is your score. It rolls up from light-seconds to light-years (a <em>game scale</em>, not real physics).</li>
               <li><span className="text-electric">Drag</span> to steer your gas cloud and swallow the smoke wisps. Gas is always safe. <span className="text-electric">Hold</span> COMPRESS (or tap to toggle) to pack mass in — a loose cloud slowly leaks it, and a bigger cloud needs more gas to grow.</li>
-              <li><span className="text-gold">DETONATE</span> to make a star: it gives a <span className="text-gold">speed boost</span> that fades over a few seconds — bigger stars boost far more — and leaves a remnant that destroys hazards.</li>
+              <li><span className="text-gold">DETONATE</span> to make a star: it gives a <span className="text-gold">speed boost</span> that fades over a few seconds — bigger stars boost far more — and leaves a remnant that destroys hazards. An <span className="text-gold">O star</span>&rsquo;s black hole follows you, a little behind, and swallows hazards near it &mdash; it never pulls in you or your gas.</li>
               <li>Chain detonations within {COMBO_WINDOW_SEC}s to scale the boost up to ×{COMBO_STEPS[COMBO_STEPS.length - 1]}. Small stars (M, K, G) also grant a short shield.</li>
               <li><span className="text-rose-300">Red-ringed</span> stars, their planets, rogue stars and runaway stars cost a Hosky paw 🐾. Lose all {START_LIVES} and the run ends — survive, boost, go farthest.</li>
             </ul>

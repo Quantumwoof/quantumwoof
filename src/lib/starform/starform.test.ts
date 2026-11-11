@@ -97,6 +97,46 @@ describe("star form engine", () => {
     expect(STEP).toBeGreaterThan(0);
   });
 
+  test("black hole follows the cloud at a distance, never touching gas or the player", () => {
+    const g = new StarForm(5);
+    g.cloud.invuln = 9999;
+    g.cloud.mass = CLOUD.maxMass;
+    g.cloud.comp = 1;
+    g.detonate();
+    g.obstacles.length = 0;
+    const bh = g.remnants.find((r) => r.type === "O")!;
+    expect(bh).toBeDefined();
+    const start = { x: bh.x, y: bh.y };
+    g.input.tx = g.cloud.x < 400 ? 700 : 100;
+    g.input.ty = g.cloud.y;
+    const lives = g.lives;
+    for (let i = 0; i < 180; i++) {
+      g.obstacles.length = 0;
+      g.step();
+    }
+    expect(g.lives).toBe(lives);
+    expect(Math.hypot(bh.x - start.x, bh.y - start.y)).toBeGreaterThan(150); // it travelled with the cloud
+    const d = Math.hypot(bh.x - g.cloud.x, bh.y - g.cloud.y);
+    expect(d).toBeGreaterThan(40); // not parked on top of the player
+    expect(d).toBeLessThan(400);
+  });
+
+  test("black hole is deterministic for the same seed and inputs", () => {
+    const pos = () => {
+      const g = new StarForm(9);
+      g.cloud.invuln = 9999;
+      g.cloud.mass = CLOUD.maxMass;
+      g.cloud.comp = 1;
+      g.detonate();
+      g.input.tx = 700;
+      g.input.ty = 200;
+      for (let i = 0; i < 200; i++) g.step();
+      const r = g.remnants.find((x) => x.type === "O");
+      return r ? [r.x, r.y] : null;
+    };
+    expect(pos()).toEqual(pos());
+  });
+
   test("black hole remnant destroys a nearby obstacle", () => {
     const g = new StarForm(5);
     g.cloud.invuln = 999;

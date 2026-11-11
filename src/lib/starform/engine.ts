@@ -540,10 +540,25 @@ export class StarForm {
 
       switch (spec.kind) {
         case "blackhole": {
-          const { pull, core } = REMNANT.blackhole;
+          const { pull, core, follow, safeGap } = REMNANT.blackhole;
+          // Lagging escort: ease toward a point beside the cloud that slowly circles it,
+          // so the hole trails the player without sitting on top of them.
+          r.angle += follow.orbitSpin * dt;
+          const gx = clamp(c.x + Math.cos(r.angle) * follow.dist, 30, WORLD_W - 30);
+          const gy = clamp(c.y + Math.sin(r.angle) * follow.dist, 30, WORLD_H - 30);
+          const fd = Math.hypot(gx - r.x, gy - r.y);
+          if (fd > 0.01) {
+            const mv = Math.min(fd * (1 - Math.exp(-follow.ease * dt)), follow.maxSpeed * dt);
+            r.x += ((gx - r.x) / fd) * mv;
+            r.y += ((gy - r.y) / fd) * mv;
+          }
+          const hr = this.hitRadius();
           for (const o of live()) {
             const d = Math.hypot(r.x - o.x, r.y - o.y);
-            if (d < spec.radius + o.r) {
+            // Suction only moves hazards (gas and the player's cloud are never touched), and
+            // not ones hugging the cloud, so the pull can't fling them across the player.
+            const nearCloud = anyPart(o, (p) => Math.hypot(p.x - c.x, p.y - c.y) < hr + p.r + safeGap);
+            if (d < spec.radius + o.r && !nearCloud) {
               const f = pull * (1 - Math.min(1, d / spec.radius)) * dt;
               o.x += ((r.x - o.x) / (d || 1)) * f;
               o.y += ((r.y - o.y) / (d || 1)) * f;

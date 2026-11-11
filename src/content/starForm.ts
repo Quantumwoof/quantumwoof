@@ -5,7 +5,7 @@ export const STAR_TEACH: Record<SpectralId, { name: string; fact: string; remnan
   O: {
     name: "Blue giant",
     fact: "O stars are 16+ times the Sun's mass, burn blue-hot and live only a few million years.",
-    remnant: "Their cores collapse into black holes (or neutron stars) in a supernova.",
+    remnant: "Their cores collapse into black holes (or neutron stars) in a supernova. In the game your black hole trails you like an escort, swallowing hazards near it — it never pulls in you or your gas.",
   },
   B: {
     name: "Blue-white star",

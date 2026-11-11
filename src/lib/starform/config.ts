@@ -119,7 +119,14 @@ export const MAX_REMNANTS = 3; // effects stack; the oldest fades when a 4th is 
 
 export const REMNANT = {
   /** Black hole: pull strength (units/s at the centre, fades to 0 at the rim) and event horizon. */
-  blackhole: { pull: 620, core: 48 },
+  blackhole: {
+    pull: 620,
+    core: 48,
+    /** The hole escorts the cloud: eased follow of a point `dist` away that slowly circles it. */
+    follow: { dist: 135, ease: 2.2, maxSpeed: 480, orbitSpin: 0.8 },
+    /** Never drag hazards that are already this close to the cloud's edge across it. */
+    safeGap: 45,
+  },
   /** Neutron star beams. */
   neutron: { beams: 2, beamLen: 190, beamWidth: 15, spin: 2.3 },
   /** A star: one-time shell clear then a small white dwarf aura. */
