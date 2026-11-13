@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { CLOUD, HIT_INVULN_SEC, REMNANT, LB, MAX_LIVES, START_LIVES, SPECTRAL, SPECTRAL_ORDER, STEP, MAX_REMNANTS, LS_PER_LY, TRAVEL, type SpectralId } from "./config";
+import { CLOUD, HIT_INVULN_SEC, REMNANT, LB, MAX_LIVES, START_LIVES, SPECTRAL, SPECTRAL_ORDER, STEP, MAX_REMNANTS, LS_PER_LY, TRAVEL, WORLD_H, WORLD_W, type SpectralId } from "./config";
 import { DistanceTracker, formatDistance, simulateDistance } from "./distance";
 import { StarForm, classify, partsOf } from "./engine";
 import { elapsedLooksRight, parseRun, sanitizeName, verifyRun, type RunDet } from "./validate";
@@ -655,5 +655,46 @@ describe("run verification", () => {
     expect(parseRun({ name: "   ", runId: "ABCDEFGH23", steps: 1000, detonations: [G(1)] }).ok).toBe(false);
     expect(sanitizeName("<script>alert(1)</script> Hosky pup 🐾 way too long name here")).not.toMatch(/[<>()]/);
     expect(sanitizeName("a".repeat(100)).length).toBe(LB.nameMax);
+  });
+});
+
+describe("screen-shaped arena", () => {
+  test("keeps the same area on every aspect, and spawns/despawns at the true edges", () => {
+    for (const aspect of [390 / 844, 0.8, 1440 / 900, 844 / 390]) {
+      const g = new StarForm(4242, aspect);
+      expect(Math.abs(g.W * g.H - WORLD_W * WORLD_H)).toBeLessThan(1);
+      expect(g.W / g.H).toBeCloseTo(aspect, 3);
+      expect(g.cloud.x).toBeCloseTo(g.W / 2, 3);
+      for (const q of g.gas) {
+        expect(q.x).toBeLessThanOrEqual(g.W);
+        expect(q.y).toBeLessThanOrEqual(g.H);
+      }
+      // steer into the far corner: the cloud reaches it (no hidden 800×1000 wall)
+      g.input.tx = g.W;
+      g.input.ty = g.H;
+      for (let i = 0; i < 60 * 8; i++) {
+        g.cloud.invuln = 99;
+        g.step();
+        g.drain();
+        for (const o of g.obstacles) {
+          expect(o.x).toBeGreaterThan(-200);
+          expect(o.x).toBeLessThan(g.W + 200);
+          expect(o.y).toBeGreaterThan(-200);
+          expect(o.y).toBeLessThan(g.H + 200);
+        }
+      }
+      expect(g.cloud.x).toBeGreaterThan(g.W - 80);
+      expect(g.cloud.y).toBeGreaterThan(g.H - 80);
+    }
+  });
+
+  test("reshaping mid-run (rotation) keeps area and the cloud's relative spot", () => {
+    const g = new StarForm(7, 390 / 844);
+    const rx = g.cloud.x / g.W;
+    g.setAspect(844 / 390);
+    expect(Math.abs(g.W * g.H - WORLD_W * WORLD_H)).toBeLessThan(1);
+    expect(g.cloud.x / g.W).toBeCloseTo(rx, 3);
+    g.setAspect(100); // absurd shapes are clamped
+    expect(g.W / g.H).toBeLessThanOrEqual(2.6 + 1e-9);
   });
 });

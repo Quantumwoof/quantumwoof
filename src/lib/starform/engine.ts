@@ -28,6 +28,9 @@ import {
   PAW_REGAIN_TYPES,
   type RemnantKind,
   STEP,
+  WORLD_AREA,
+  WORLD_ASPECT_MAX,
+  WORLD_ASPECT_MIN,
   WORLD_H,
   WORLD_W,
   type ObstacleKind,
@@ -160,19 +163,26 @@ function anyPart(o: Obstacle, test: (p: HitPart) => boolean): boolean {
 
 export class StarForm {
   readonly seed: number;
+  /**
+   * Arena size in world units. It always holds WORLD_AREA (800 × 1000) of space, reshaped to
+   * the player's screen (see setAspect), so hazard/gas density per unit area — and so balance —
+   * is the same on a tall phone, a square tablet or a wide desktop.
+   */
+  W = WORLD_W;
+  H = WORLD_H;
   t = 0;
   lives = START_LIVES;
   steps = 0;
   tracker = new DistanceTracker();
   ended = false;
-  cloud: Cloud = { x: WORLD_W / 2, y: WORLD_H * 0.62, mass: 0, comp: 0, invuln: NEW_CLOUD_GRACE_SEC, peakEff: 0 };
+  cloud: Cloud = { x: this.W / 2, y: this.H * 0.62, mass: 0, comp: 0, invuln: NEW_CLOUD_GRACE_SEC, peakEff: 0 };
   shots: Shot[] = [];
   gas: Gas[] = [];
   obstacles: Obstacle[] = [];
   remnants: Remnant[] = [];
   detonations: Detonation[] = [];
   events: GameEvent[] = [];
-  input: Input = { tx: WORLD_W / 2, ty: WORLD_H * 0.62, compress: false };
+  input: Input = { tx: this.W / 2, ty: this.H * 0.62, compress: false };
   chain = -1; // chain index of the last detonation (−1 = none)
   lastDetT = -Infinity;
   detCooldown = 0;
@@ -187,13 +197,47 @@ export class StarForm {
   private nextGasAt = 0;
   private nid = 1;
 
-  constructor(seed: number) {
+  /** `aspect` (width / height of the player's screen) shapes the arena; omitted = 4:5. */
+  constructor(seed: number, aspect?: number) {
     this.seed = seed >>> 0;
     this.rngSpawn = mulberry32(this.seed ^ 0x9e3779b9);
     this.rngGas = mulberry32(this.seed ^ 0x85ebca6b);
+    if (aspect) {
+      this.setAspect(aspect);
+      this.cloud.x = this.W / 2;
+      this.cloud.y = this.H * 0.62;
+    }
     this.input.tx = this.cloud.x;
     this.input.ty = this.cloud.y;
     for (let i = 0; i < GAS.startOnField; i++) this.spawnGas(true);
+  }
+
+  /**
+   * Reshape the arena to a screen's width/height ratio, keeping its area. Safe mid-run (the
+   * server never replays positions): the cloud and anything inside stay put, clamped in.
+   */
+  setAspect(aspect: number) {
+    const a = Math.max(WORLD_ASPECT_MIN, Math.min(WORLD_ASPECT_MAX, aspect || WORLD_W / WORLD_H));
+    const W = Math.sqrt(WORLD_AREA * a);
+    const H = WORLD_AREA / W;
+    if (Math.abs(W - this.W) < 0.5 && Math.abs(H - this.H) < 0.5) return;
+    const sx = W / this.W;
+    const sy = H / this.H;
+    this.W = W;
+    this.H = H;
+    // keep the cloud's relative spot so a rotation doesn't fling it into a wall
+    this.cloud.x = clamp(this.cloud.x * sx, 0, W);
+    this.cloud.y = clamp(this.cloud.y * sy, 0, H);
+    this.input.tx = clamp(this.input.tx * sx, 0, W);
+    this.input.ty = clamp(this.input.ty * sy, 0, H);
+    for (const q of this.gas) {
+      q.x = clamp(q.x, 20, W - 20);
+      q.y = clamp(q.y, 20, H - 20);
+    }
+    for (const r of this.remnants) {
+      r.x = clamp(r.x, 30, W - 30);
+      r.y = clamp(r.y, 30, H - 30);
+    }
   }
 
   // ------------------------------------------------------------ derived
@@ -246,8 +290,8 @@ export class StarForm {
   // ------------------------------------------------------------ spawns
   private spawnGas(initial = false) {
     const r = this.rngGas;
-    const x = 40 + r() * (WORLD_W - 80);
-    const y = 60 + r() * (WORLD_H - 160);
+    const x = 40 + r() * (this.W - 80);
+    const y = 60 + r() * (this.H - 160);
     const a = r() * Math.PI * 2;
     const sp = GAS.drift * (0.4 + r());
     if (this.gas.length >= GAS.maxOnField) return;
@@ -261,8 +305,8 @@ export class StarForm {
     const pickKind = r();
     const edge = Math.floor(r() * 4);
     const along = r();
-    const aimX = WORLD_W * (0.2 + 0.6 * r());
-    const aimY = WORLD_H * (0.25 + 0.5 * r());
+    const aimX = this.W * (0.2 + 0.6 * r());
+    const aimY = this.H * (0.25 + 0.5 * r());
     const speedJit = 0.8 + 0.4 * r();
     const phase = r() * Math.PI * 2;
     const styleRoll = r();
@@ -307,10 +351,10 @@ export class StarForm {
     const m = OBSTACLE.margin * 0.5;
     let x: number;
     let y: number;
-    if (edge === 0) { x = along * WORLD_W; y = -m; }
-    else if (edge === 1) { x = WORLD_W + m; y = along * WORLD_H; }
-    else if (edge === 2) { x = along * WORLD_W; y = WORLD_H + m; }
-    else { x = -m; y = along * WORLD_H; }
+    if (edge === 0) { x = along * this.W; y = -m; }
+    else if (edge === 1) { x = this.W + m; y = along * this.H; }
+    else if (edge === 2) { x = along * this.W; y = this.H + m; }
+    else { x = -m; y = along * this.H; }
 
     const spec = OBSTACLE[kind];
     const heading = Math.atan2(aimY - y, aimX - x);
@@ -332,8 +376,8 @@ export class StarForm {
     };
     if (kind === "dart") {
       // Telegraph from just inside the arena so the warning is visible.
-      o.x = clamp(x, 14, WORLD_W - 14);
-      o.y = clamp(y, 14, WORLD_H - 14);
+      o.x = clamp(x, 14, this.W - 14);
+      o.y = clamp(y, 14, this.H - 14);
       const h = Math.atan2(aimY - o.y, aimX - o.x);
       o.heading = h;
       o.vx = Math.cos(h) * sp;
@@ -447,8 +491,8 @@ export class StarForm {
       c.y += (dy / d) * v * dt;
     }
     const rad = this.radius();
-    c.x = clamp(c.x, rad, WORLD_W - rad);
-    c.y = clamp(c.y, rad, WORLD_H - rad);
+    c.x = clamp(c.x, rad, this.W - rad);
+    c.y = clamp(c.y, rad, this.H - rad);
 
     // slow decay unless compressing; tiny free trickle so a cloud always grows a bit
     const starving = this.t - this.lastGasT > CLOUD.leakGraceSec;
@@ -480,8 +524,8 @@ export class StarForm {
       } else {
         g.x += g.vx * dt;
         g.y += g.vy * dt;
-        if (g.x < 20 || g.x > WORLD_W - 20) g.vx *= -1;
-        if (g.y < 20 || g.y > WORLD_H - 20) g.vy *= -1;
+        if (g.x < 20 || g.x > this.W - 20) g.vx *= -1;
+        if (g.y < 20 || g.y > this.H - 20) g.vy *= -1;
       }
       if (g.age > GAS.lifeSec && !g.pulled) this.gas.splice(this.gas.indexOf(g), 1);
     }
@@ -524,7 +568,7 @@ export class StarForm {
       o.x += (o.vx + nx * wob) * dt;
       o.y += (o.vy + ny * wob) * dt;
       const m = OBSTACLE.margin * 2.5;
-      if (o.x < -m || o.x > WORLD_W + m || o.y < -m || o.y > WORLD_H + m) {
+      if (o.x < -m || o.x > this.W + m || o.y < -m || o.y > this.H + m) {
         this.obstacles.splice(this.obstacles.indexOf(o), 1);
       }
     }
@@ -569,8 +613,8 @@ export class StarForm {
   private escort(r: Remnant, f: { dist: number; ease: number; maxSpeed: number; orbitSpin: number }, dt: number) {
     const c = this.cloud;
     r.orbit += f.orbitSpin * dt;
-    const gx = clamp(c.x + Math.cos(r.orbit) * f.dist, 30, WORLD_W - 30);
-    const gy = clamp(c.y + Math.sin(r.orbit) * f.dist, 30, WORLD_H - 30);
+    const gx = clamp(c.x + Math.cos(r.orbit) * f.dist, 30, this.W - 30);
+    const gy = clamp(c.y + Math.sin(r.orbit) * f.dist, 30, this.H - 30);
     const d = Math.hypot(gx - r.x, gy - r.y);
     if (d > 0.01) {
       const mv = Math.min(d * (1 - Math.exp(-f.ease * dt)), f.maxSpeed * dt);
@@ -685,8 +729,8 @@ export class StarForm {
             const ux = gd > 0.01 ? (r.x - c.x) / gd : 1;
             const uy = gd > 0.01 ? (r.y - c.y) / gd : 0;
             const out = Math.min(q.minGap - gd, 420 * dt); // eased out, not teleported
-            r.x = clamp(r.x + ux * out, 30, WORLD_W - 30);
-            r.y = clamp(r.y + uy * out, 30, WORLD_H - 30);
+            r.x = clamp(r.x + ux * out, 30, this.W - 30);
+            r.y = clamp(r.y + uy * out, 30, this.H - 30);
           }
           this.pullHazards(r, q.pullRadius, q.pull, q.safeGap, dt, live);
           for (const o of live()) {
@@ -806,7 +850,7 @@ export class StarForm {
       sh.x += sh.vx * dt;
       sh.y += sh.vy * dt;
       sh.trail += dt;
-      let done = sh.life <= 0 || sh.x < -60 || sh.x > WORLD_W + 60 || sh.y < -60 || sh.y > WORLD_H + 60;
+      let done = sh.life <= 0 || sh.x < -60 || sh.x > this.W + 60 || sh.y < -60 || sh.y > this.H + 60;
       if (!done) {
         const victim = this.obstacles.find((o) => o.warn <= 0 && anyPart(o, (p) => Math.hypot(p.x - sh.x, p.y - sh.y) < J.radius + p.r));
         if (victim) {

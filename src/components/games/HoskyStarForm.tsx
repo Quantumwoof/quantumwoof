@@ -129,11 +129,17 @@ export function HoskyStarForm() {
   /** Immersive play: the game covers the whole viewport (CSS overlay, plus real fullscreen where allowed). */
   const [immersive, setImmersive] = useState(false);
   const fsUsedRef = useRef(false);
+  const immersiveRef = useRef(false);
+  useEffect(() => {
+    immersiveRef.current = immersive;
+  }, [immersive]);
+  const hudRef = useRef<HTMLDivElement>(null);
+  const ctrlRef = useRef<HTMLDivElement>(null);
   const exitImmersiveRef = useRef<() => void>(() => {});
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const gameRef = useRef<StarForm | null>(null);
   const fxRef = useRef<Fx | null>(null);
-  const sizeRef = useRef({ width: 400, height: 500, dpr: 1 });
+  const sizeRef = useRef({ width: 400, height: 500, dpr: 1, insetTop: 0, insetBottom: 0 });
   const pausedRef = useRef(false);
   const keysRef = useRef(new Set<string>());
   const compressRef = useRef({ held: false, latched: false, pressAt: 0 });
@@ -197,13 +203,21 @@ export function HoskyStarForm() {
       const dpr = Math.min(2, window.devicePixelRatio || 1);
       const width = wrap.clientWidth;
       const height = wrap.clientHeight || (width * WORLD_H) / WORLD_W;
-      sizeRef.current = { width, height, dpr };
+      // floating HUD / buttons (full screen) cover these strips; labels and toasts avoid them
+      const top = wrap.getBoundingClientRect().top;
+      const hud = hudRef.current?.getBoundingClientRect();
+      const ctrl = ctrlRef.current?.getBoundingClientRect();
+      const insetTop = hud && hud.top <= top + 2 ? Math.max(0, hud.bottom - top) : 0;
+      const insetBottom = ctrl && ctrl.bottom >= top + height - 2 ? Math.max(0, top + height - ctrl.top) : 0;
+      sizeRef.current = { width, height, dpr, insetTop, insetBottom };
       canvas.width = Math.round(width * dpr);
       canvas.height = Math.round(height * dpr);
     };
     fit();
     const ro = new ResizeObserver(fit);
     ro.observe(wrap);
+    if (hudRef.current) ro.observe(hudRef.current);
+    if (ctrlRef.current) ro.observe(ctrlRef.current);
     return () => ro.disconnect();
   }, []);
 
@@ -362,7 +376,8 @@ export function HoskyStarForm() {
   const start = useCallback(() => {
     enterImmersive();
     const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
-    gameRef.current = new StarForm(randomSeed());
+    // The arena takes the screen's shape (same area everywhere), so full-screen play fills it.
+    gameRef.current = new StarForm(randomSeed(), window.innerWidth / Math.max(1, window.innerHeight));
     // Dev/test hook only (never set in production builds).
     if (process.env.NODE_ENV !== "production") (window as unknown as { __sf?: StarForm }).__sf = gameRef.current;
     // Read-only position probe for live verification (`?sfdebug=1`); changes nothing in the game.
@@ -382,9 +397,10 @@ export function HoskyStarForm() {
           const c = canvasRef.current;
           if (!c) return null;
           const rect = c.getBoundingClientRect();
-          const v = fitView(rect.width, rect.height);
+          const v = fitView(rect.width, rect.height, gg.W, gg.H);
           return { left: rect.left + v.ox, top: rect.top + v.oy, scale: v.scale, canvasW: rect.width, canvasH: rect.height };
         })(),
+        world: { w: gg.W, h: gg.H },
         immersive: !!document.querySelector('[data-sf-immersive="1"]'),
         fullscreen: !!fsElement(),
       });
@@ -424,6 +440,9 @@ export function HoskyStarForm() {
       const g = gameRef.current;
       const fx = fxRef.current;
       if (!g || !fx) return;
+      // full screen: keep the arena the exact shape of the screen (rotation, browser bars…)
+      const sz = sizeRef.current;
+      if (immersiveRef.current && sz.width > 0 && sz.height > 0) g.setAspect(sz.width / sz.height);
       const dt = Math.min(0.1, (now - last) / 1000);
       last = now;
 
@@ -437,8 +456,8 @@ export function HoskyStarForm() {
           const dy = (k.has("ArrowDown") || k.has("s") ? 1 : 0) - (k.has("ArrowUp") || k.has("w") ? 1 : 0);
           if (dx || dy) {
             const n = Math.hypot(dx, dy);
-            g.input.tx = Math.max(0, Math.min(WORLD_W, g.cloud.x + (dx / n) * 240));
-            g.input.ty = Math.max(0, Math.min(WORLD_H, g.cloud.y + (dy / n) * 240));
+            g.input.tx = Math.max(0, Math.min(g.W, g.cloud.x + (dx / n) * 240));
+            g.input.ty = Math.max(0, Math.min(g.H, g.cloud.y + (dy / n) * 240));
           }
           const cr = compressRef.current;
           g.input.compress = cr.held || cr.latched;
@@ -547,7 +566,8 @@ export function HoskyStarForm() {
   };
   const toWorld = (clientX: number, clientY: number) => {
     const rect = canvasRef.current!.getBoundingClientRect();
-    const v = fitView(rect.width, rect.height);
+    const g = gameRef.current;
+    const v = fitView(rect.width, rect.height, g?.W, g?.H);
     return {
       x: (clientX - rect.left - v.ox) / v.scale,
       y: (clientY - rect.top - v.oy) / v.scale,
@@ -562,8 +582,8 @@ export function HoskyStarForm() {
     pointer.current = { id: e.pointerId, x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, at: performance.now(), onCloud };
     if (e.pointerType === "mouse") {
       const w = toWorld(e.clientX, e.clientY);
-      g.input.tx = Math.max(0, Math.min(WORLD_W, w.x));
-      g.input.ty = Math.max(0, Math.min(WORLD_H, w.y));
+      g.input.tx = Math.max(0, Math.min(g.W, w.x));
+      g.input.ty = Math.max(0, Math.min(g.H, w.y));
       compressRef.current.pressAt = performance.now();
       setCompress(true, compressRef.current.latched);
     }
@@ -573,15 +593,15 @@ export function HoskyStarForm() {
     if (!g || phase !== "playing" || pausedRef.current) return;
     if (e.pointerType === "mouse") {
       const w = toWorld(e.clientX, e.clientY);
-      g.input.tx = Math.max(0, Math.min(WORLD_W, w.x));
-      g.input.ty = Math.max(0, Math.min(WORLD_H, w.y));
+      g.input.tx = Math.max(0, Math.min(g.W, w.x));
+      g.input.ty = Math.max(0, Math.min(g.H, w.y));
       return;
     }
     if (pointer.current.id !== e.pointerId) return;
     const rect = canvasRef.current!.getBoundingClientRect();
-    const k = 1 / fitView(rect.width, rect.height).scale;
-    g.input.tx = Math.max(0, Math.min(WORLD_W, g.input.tx + (e.clientX - pointer.current.x) * k * 1.15));
-    g.input.ty = Math.max(0, Math.min(WORLD_H, g.input.ty + (e.clientY - pointer.current.y) * k * 1.15));
+    const k = 1 / fitView(rect.width, rect.height, g.W, g.H).scale;
+    g.input.tx = Math.max(0, Math.min(g.W, g.input.tx + (e.clientX - pointer.current.x) * k * 1.15));
+    g.input.ty = Math.max(0, Math.min(g.H, g.input.ty + (e.clientY - pointer.current.y) * k * 1.15));
     pointer.current.x = e.clientX;
     pointer.current.y = e.clientY;
   };
@@ -598,7 +618,7 @@ export function HoskyStarForm() {
     }
     const g = gameRef.current;
     if (g && e.pointerType !== "mouse") {
-      g.input.tx = Math.min(WORLD_W, Math.max(0, g.input.tx));
+      g.input.tx = Math.min(g.W, Math.max(0, g.input.tx));
     }
   };
 
@@ -687,23 +707,27 @@ export function HoskyStarForm() {
       <div
         ref={stageRef}
         data-sf-immersive={immersive ? "1" : "0"}
-        className={immersive ? "sf-imm fixed inset-0 z-[1000] flex flex-col bg-[#020617]" : ""}
+        className={immersive ? "fixed inset-0 z-[1000] overflow-hidden bg-[#020617]" : ""}
+        style={immersive ? { height: "100dvh", width: "100vw", overscrollBehavior: "none" } : undefined}
+      >
+      {/* HUD (floats over the game in full screen) */}
+      <div
+        ref={hudRef}
+        className={
+          immersive
+            ? "pointer-events-none absolute inset-x-0 top-0 z-10 flex items-start justify-between gap-2 bg-gradient-to-b from-[#020617]/80 via-[#020617]/40 to-transparent pb-6 [text-shadow:0_1px_3px_rgba(0,0,0,0.9)]"
+            : "mb-2 flex items-center justify-between gap-2"
+        }
         style={
           immersive
             ? {
-                height: "100dvh",
-                width: "100vw",
                 paddingTop: "max(6px, env(safe-area-inset-top))",
-                paddingBottom: "max(8px, env(safe-area-inset-bottom))",
-                paddingLeft: "max(8px, env(safe-area-inset-left))",
-                paddingRight: "max(8px, env(safe-area-inset-right))",
-                overscrollBehavior: "none",
+                paddingLeft: "max(12px, env(safe-area-inset-left))",
+                paddingRight: "calc(max(12px, env(safe-area-inset-right)) + 44px)",
               }
             : undefined
         }
       >
-      {/* HUD */}
-      <div className={`sf-hud mb-2 flex items-center justify-between gap-2 ${immersive ? "mx-auto w-full max-w-[560px] shrink-0 pr-11" : ""}`}>
         <Paws lives={phase === "playing" ? hud.lives : START_LIVES} />
         <div className="min-w-0 text-center">
           <p className="card-label leading-none">Distance</p>
@@ -742,7 +766,7 @@ export function HoskyStarForm() {
         ref={wrapRef}
         className={
           immersive
-            ? "sf-wrap relative min-h-0 w-full flex-1 overflow-hidden"
+            ? "absolute inset-0 overflow-hidden"
             : "relative w-full overflow-hidden rounded-2xl border border-white/15 bg-navy shadow-[0_0_40px_rgba(62,120,255,0.18)]"
         }
         style={immersive ? undefined : { aspectRatio: `${WORLD_W} / ${WORLD_H}` }}
@@ -890,8 +914,26 @@ export function HoskyStarForm() {
         )}
       </div>
 
+      {/* Readout + controls (float over the bottom of the game in full screen) */}
+      <div
+        ref={ctrlRef}
+        className={
+          immersive
+            ? "pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-[#020617]/70 via-[#020617]/25 to-transparent pt-6"
+            : ""
+        }
+        style={
+          immersive
+            ? {
+                paddingBottom: "max(10px, env(safe-area-inset-bottom))",
+                paddingLeft: "max(10px, env(safe-area-inset-left))",
+                paddingRight: "max(10px, env(safe-area-inset-right))",
+              }
+            : undefined
+        }
+      >
       {/* Current star readout */}
-      <div className={`sf-read mt-2 flex items-center justify-between gap-2 text-xs ${immersive ? "mx-auto w-full max-w-[560px] shrink-0" : ""}`} aria-live="off">
+      <div className={`mt-2 flex items-center justify-between gap-2 text-xs ${immersive ? "mx-auto w-full max-w-[560px] [@media(max-height:500px)]:hidden [text-shadow:0_1px_3px_rgba(0,0,0,0.9)] [&_button]:pointer-events-auto [&_button]:bg-black/40" : ""}`} aria-live="off">
         <p className="text-slate-muted">
           Growing: <span className="font-mono font-semibold" style={{ color: typeSpec.color }}>{phase === "playing" ? hud.type : "–"}</span>
           {phase === "playing" && (
@@ -913,7 +955,7 @@ export function HoskyStarForm() {
       </div>
 
       {/* Controls */}
-      <div className={`sf-ctrl mt-2 grid grid-cols-[1fr_1.5fr] gap-3 ${immersive ? "mx-auto w-full max-w-[560px] shrink-0" : ""}`}>
+      <div className={`mt-2 grid grid-cols-[1fr_1.5fr] gap-3 ${immersive ? "mx-auto w-full max-w-[560px] [@media(max-height:500px)]:max-w-[400px] [&_button]:pointer-events-auto [&_button]:backdrop-blur-[2px]" : ""}`}>
         <button
           type="button"
           data-testid="sf-compress"
@@ -923,14 +965,14 @@ export function HoskyStarForm() {
           onPointerUp={onCompressUp}
           onPointerCancel={onCompressUp}
           onContextMenu={(e) => e.preventDefault()}
-          className={`sf-btn-c touch-none rounded-2xl border px-3 ${immersive ? "py-3" : "py-5"} text-sm font-bold uppercase tracking-wide transition disabled:opacity-40 ${
+          className={`touch-none rounded-2xl border px-3 ${immersive ? "py-3 [@media(max-height:500px)]:py-1.5" : "py-5"} text-sm font-bold uppercase tracking-wide transition disabled:opacity-40 ${
             compressOn
               ? "border-electric bg-electric/25 text-electric shadow-[0_0_24px_rgba(62,207,255,0.35)]"
               : "border-white/20 bg-white/[0.05] text-slate"
           }`}
         >
           Compress
-          <span className="mt-0.5 block text-[0.65rem] font-medium normal-case tracking-normal text-slate-muted">
+          <span className="mt-0.5 block text-[0.65rem] font-medium normal-case tracking-normal text-slate-muted [@media(max-height:500px)]:hidden">
             {compressUi.latched ? "on — tap to release" : "hold · or tap to toggle"}
           </span>
         </button>
@@ -943,17 +985,18 @@ export function HoskyStarForm() {
             detonate();
           }}
           onContextMenu={(e) => e.preventDefault()}
-          className={`sf-btn-d touch-none rounded-2xl border-2 px-3 ${immersive ? "py-3" : "py-5"} text-lg font-extrabold uppercase tracking-wider transition active:scale-[0.97] disabled:opacity-40 ${
+          className={`touch-none rounded-2xl border-2 px-3 ${immersive ? "py-3 [@media(max-height:500px)]:py-1.5" : "py-5"} text-lg font-extrabold uppercase tracking-wider transition active:scale-[0.97] disabled:opacity-40 ${
             hud.canDet
               ? "border-gold bg-gold/25 text-gold shadow-[0_0_28px_rgba(245,197,66,0.4)]"
               : "border-white/20 bg-white/[0.05] text-slate"
           }`}
         >
           Detonate
-          <span className="mt-0.5 block text-[0.65rem] font-medium normal-case tracking-normal text-slate-muted">
+          <span className="mt-0.5 block text-[0.65rem] font-medium normal-case tracking-normal text-slate-muted [@media(max-height:500px)]:hidden">
             {hud.canDet ? `make ${hud.type} · boost ×${fmt(typeSpec.boost * hud.chain)}` : "gather more gas"}
           </span>
         </button>
+      </div>
       </div>
       </div>
 

@@ -3,12 +3,17 @@
  * Pure data (no React, no server imports) so the engine, the UI and the
  * server-side score check all read the same values.
  *
- * World units: the arena is a fixed WORLD_W × WORLD_H box on every device
- * (the canvas just scales it), so the daily seeded run is identical for all.
+ * World units: the arena always holds WORLD_AREA (= 800 × 1000) square units, reshaped to the
+ * player's screen so it fills the display edge to edge. Spawn rates and caps are per arena,
+ * and the area never changes, so hazard and gas density are the same on every device.
  */
 
-export const WORLD_W = 800;
+export const WORLD_W = 800; // default (4:5) arena, used before a screen is known and in tests
 export const WORLD_H = 1000;
+export const WORLD_AREA = WORLD_W * WORLD_H;
+/** Arena shape limits (width / height); beyond these the view letterboxes. */
+export const WORLD_ASPECT_MIN = 0.36;
+export const WORLD_ASPECT_MAX = 2.6;
 export const STEP = 1 / 60; // fixed sim step (seconds) — keeps the seed fair
 
 export const START_LIVES = 5;

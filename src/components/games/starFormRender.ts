@@ -528,7 +528,7 @@ function labelOffset(r: Remnant): number {
  * legibility on small screens, faded with the remaining life, and nudged apart so
  * stacked remnants don't print over each other. Render-only.
  */
-function drawRemnantLabels(ctx: CanvasRenderingContext2D, g: StarForm) {
+function drawRemnantLabels(ctx: CanvasRenderingContext2D, g: StarForm, top: number, bottom: number) {
   const placed: { x: number; y: number }[] = [];
   ctx.save();
   ctx.font = "bold 24px system-ui, sans-serif";
@@ -540,10 +540,11 @@ function drawRemnantLabels(ctx: CanvasRenderingContext2D, g: StarForm) {
     const frac = Math.max(0, r.life / r.maxLife);
     const a = (0.35 + 0.65 * frac) * Math.min(1, frac * 6) * (r.fade > 0 ? r.fade / REMNANT.fadeOutSec : 1);
     if (a <= 0.02) continue;
-    const x = Math.max(70, Math.min(WORLD_W - 70, r.x));
-    let y = Math.max(130, Math.min(WORLD_H - 24, r.y + labelOffset(r)));
+    // stay clear of the HUD (top) and the floating buttons (bottom)
+    const x = Math.max(70, Math.min(g.W - 70, r.x));
+    let y = Math.max(top + 30, Math.min(bottom - 10, r.y + labelOffset(r)));
     for (let i = 0; i < 4; i++) {
-      if (placed.some((p) => Math.abs(p.x - x) < 150 && Math.abs(p.y - y) < 28)) y = Math.min(WORLD_H - 24, y + 28);
+      if (placed.some((p) => Math.abs(p.x - x) < 150 && Math.abs(p.y - y) < 28)) y = Math.min(bottom - 10, y + 28);
     }
     placed.push({ x, y });
     ctx.globalAlpha = a;
@@ -718,20 +719,25 @@ function drawRemnant(ctx: CanvasRenderingContext2D, r: Remnant, g: StarForm, t: 
   ctx.restore();
 }
 
-export type DrawOpts = { width: number; height: number; dpr: number };
+/** `insetTop` / `insetBottom`: CSS px covered by floating HUD / buttons (labels and toasts avoid them). */
+export type DrawOpts = { width: number; height: number; dpr: number; insetTop?: number; insetBottom?: number };
 
 /**
- * How the fixed WORLD_W × WORLD_H arena sits in a canvas of `width` × `height` CSS px: scaled
- * to fit ("contain") and centred. A bigger screen gets a bigger view of the same arena, never
- * more room, so spawn rates, leashes and hazard density stay identical on every device.
+ * How the W × H arena sits in a canvas of `width` × `height` CSS px: scaled to fit and centred.
+ * In full-screen play the arena is reshaped to the screen (StarForm.setAspect), so this fills
+ * edge to edge; only the inline (paused, on-page) view can show margins.
  */
-export function fitView(width: number, height: number) {
-  const scale = Math.max(0.01, Math.min(width / WORLD_W, height / WORLD_H));
-  return { scale, ox: (width - WORLD_W * scale) / 2, oy: (height - WORLD_H * scale) / 2 };
+export function fitView(width: number, height: number, W = WORLD_W, H = WORLD_H) {
+  const scale = Math.max(0.01, Math.min(width / W, height / H));
+  return { scale, ox: (width - W * scale) / 2, oy: (height - H * scale) / 2 };
 }
 
 export function draw(ctx: CanvasRenderingContext2D, g: StarForm, fx: Fx, o: DrawOpts, type: SpectralId, progress: number) {
-  const view = fitView(o.width, o.height);
+  const W = g.W;
+  const H = g.H;
+  const view = fitView(o.width, o.height, W, H);
+  const topW = Math.max(0, ((o.insetTop ?? 0) - view.oy) / view.scale);
+  const botW = H - Math.max(0, ((o.insetBottom ?? 0) - view.oy) / view.scale);
   const sx = view.scale * o.dpr;
   const t = fx.time;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -744,11 +750,11 @@ export function draw(ctx: CanvasRenderingContext2D, g: StarForm, fx: Fx, o: Draw
   // visible area in world units (bigger than the arena when the screen's shape differs)
   const ex0 = -view.ox / view.scale - 20;
   const ey0 = -view.oy / view.scale - 20;
-  const ex1 = WORLD_W + view.ox / view.scale + 20;
-  const ey1 = WORLD_H + view.oy / view.scale + 20;
+  const ex1 = W + view.ox / view.scale + 20;
+  const ey1 = H + view.oy / view.scale + 20;
 
   // ---- deep space + Milky Way band, scrolling slowly past
-  const bg = ctx.createLinearGradient(0, 0, 0, WORLD_H);
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
   bg.addColorStop(0, "#050b22");
   bg.addColorStop(0.55, "#0a0926");
   bg.addColorStop(1, "#140926");
@@ -794,26 +800,22 @@ export function draw(ctx: CanvasRenderingContext2D, g: StarForm, fx: Fx, o: Draw
   // boost tint: the faster we go, the more the edges glow
   if (fx.rate > 1.6) {
     const k = Math.min(1, (fx.rate - 1.6) / 5);
-    const vg = ctx.createRadialGradient(WORLD_W / 2, WORLD_H * 0.6, WORLD_H * 0.25, WORLD_W / 2, WORLD_H * 0.6, WORLD_H * 0.75);
+    const R = Math.max(W, H);
+    const vg = ctx.createRadialGradient(W / 2, H * 0.6, R * 0.25, W / 2, H * 0.6, R * 0.75);
     vg.addColorStop(0, "rgba(120,170,255,0)");
     vg.addColorStop(1, `rgba(120,170,255,${0.22 * k})`);
     ctx.fillStyle = vg;
-    ctx.fillRect(0, 0, WORLD_W, WORLD_H);
+    ctx.fillRect(0, 0, W, H);
   }
 
-  // dim the space outside the arena a little so the play area reads clearly
-  if (ex0 < -21 || ey0 < -21) {
+  // inline (paused, on-page) view only: dim any space outside the arena. Full screen has none.
+  if (ex0 < -24 || ey0 < -24) {
     ctx.fillStyle = "rgba(2,6,23,0.38)";
     ctx.fillRect(ex0, ey0, ex1 - ex0, -ey0);
-    ctx.fillRect(ex0, WORLD_H, ex1 - ex0, ey1 - WORLD_H);
-    ctx.fillRect(ex0, 0, -ex0, WORLD_H);
-    ctx.fillRect(WORLD_W, 0, ex1 - WORLD_W, WORLD_H);
+    ctx.fillRect(ex0, H, ex1 - ex0, ey1 - H);
+    ctx.fillRect(ex0, 0, -ex0, H);
+    ctx.fillRect(W, 0, ex1 - W, H);
   }
-
-  // arena frame
-  ctx.strokeStyle = "rgba(148,163,184,0.16)";
-  ctx.lineWidth = 2;
-  ctx.strokeRect(1, 1, WORLD_W - 2, WORLD_H - 2);
 
   // ---- gas: soft billowing smoke wisps with fading trails
   ctx.globalCompositeOperation = "lighter";
@@ -978,7 +980,7 @@ export function draw(ctx: CanvasRenderingContext2D, g: StarForm, fx: Fx, o: Draw
   }
   ctx.globalCompositeOperation = "source-over";
 
-  drawRemnantLabels(ctx, g);
+  drawRemnantLabels(ctx, g, topW, botW);
 
   // floating score text
   for (const f of fx.floaters) {
@@ -997,17 +999,18 @@ export function draw(ctx: CanvasRenderingContext2D, g: StarForm, fx: Fx, o: Draw
   if (fx.toast) {
     ctx.globalAlpha = Math.min(1, fx.toast.life * 2);
     ctx.fillStyle = "rgba(2,6,23,0.7)";
-    ctx.fillRect(WORLD_W / 2 - 230, 60, 460, 46);
+    const ty = topW + 24;
+    ctx.fillRect(W / 2 - 230, ty, 460, 46);
     ctx.fillStyle = "#f8fafc";
     ctx.font = "600 22px system-ui, sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText(fx.toast.text, WORLD_W / 2, 84);
+    ctx.fillText(fx.toast.text, W / 2, ty + 24);
     ctx.globalAlpha = 1;
   }
 
   // hit flash
   if (fx.flash > 0 && !fx.reduced) {
     ctx.fillStyle = `rgba(255,30,70,${fx.flash * 0.28})`;
-    ctx.fillRect(-20, -20, WORLD_W + 40, WORLD_H + 40);
+    ctx.fillRect(ex0, ey0, ex1 - ex0, ey1 - ey0);
   }
 }

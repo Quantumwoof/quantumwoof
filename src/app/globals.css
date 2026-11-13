@@ -430,27 +430,3 @@ body {
     animation: none !important;
   }
 }
-
-
-/* Hosky Star Form — immersive play on wide/landscape screens: COMPRESS and DETONATE move to
-   the sides so the playfield gets the full height. */
-@media (orientation: landscape) and (min-aspect-ratio: 5/4) {
-  .sf-imm {
-    display: grid !important;
-    grid-template-columns: minmax(104px, 16vw) minmax(0, 1fr) minmax(104px, 16vw);
-    grid-template-rows: auto minmax(0, 1fr) auto;
-    column-gap: 12px;
-  }
-  .sf-imm .sf-hud { grid-column: 2; grid-row: 1; }
-  .sf-imm .sf-wrap { grid-column: 2; grid-row: 2; }
-  .sf-imm .sf-read { grid-column: 2; grid-row: 3; }
-  .sf-imm .sf-ctrl { display: contents; }
-  .sf-imm .sf-btn-c { grid-column: 1; grid-row: 1 / 4; align-self: center; }
-  .sf-imm .sf-btn-d { grid-column: 3; grid-row: 1 / 4; align-self: center; }
-  .sf-imm .sf-btn-c,
-  .sf-imm .sf-btn-d { min-height: 34%; }
-}
-@media (orientation: landscape) and (min-aspect-ratio: 5/4) and (max-height: 520px) {
-  .sf-imm .sf-read { display: none; }
-  .sf-imm .sf-hud { margin-bottom: 4px; }
-}
