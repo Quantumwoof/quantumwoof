@@ -104,7 +104,7 @@ export function SkyTonight() {
               href="/play/star-form"
               className="inline-flex w-full items-center justify-center rounded-full bg-lavender px-5 py-3 text-sm font-semibold text-navy transition hover:bg-lavender-soft sm:w-auto"
             >
-              Play Hosky Star Form
+              Game: Hosky Star Form
             </Link>
           </>
         )}

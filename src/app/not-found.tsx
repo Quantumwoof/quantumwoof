@@ -38,7 +38,7 @@ export default function NotFound() {
           href="/play/star-form"
           className="rounded-full px-4 py-2 text-sm text-slate ring-1 ring-white/15 transition hover:bg-white/5 hover:text-white"
         >
-          Play
+          Game
         </Link>
       </div>
       <p className="mt-10 font-mono text-xs text-slate-muted">404 · QuantumWoof garden</p>
