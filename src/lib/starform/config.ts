@@ -278,10 +278,10 @@ export function minRawGasFor(effMass: number): number {
   return m + (m * m) / (2 * CLOUD.diminishMass);
 }
 
-// ---------------------------------------------------------------- all-time top 3 / validation
+// ---------------------------------------------------------------- all-time top 5 / validation
 export const LB = {
-  /** Global all-time board size. */
-  top: 3,
+  /** Global all-time board size (was 3; the Redis key below keeps its old name so past entries carry over). */
+  top: 5,
   nameMax: 16,
   maxDurationSec: 30 * 60,
   minDurationSec: 3,
@@ -298,5 +298,6 @@ export const LB = {
   prefix: "qw:starform",
 } as const;
 /** Distance board (the old points board `qw:starform:top3` is left untouched). */
+/** Historic name from when the board was a top 3 — same ZSET now holds the top 5 (nothing migrated or deleted). */
 export const TOP3_KEY = `${LB.prefix}:top3:dist`;
 export const RUN_PREFIX = `${LB.prefix}:run:`;

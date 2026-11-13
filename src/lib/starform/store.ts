@@ -1,20 +1,23 @@
 import "server-only";
 /**
- * Hosky Star Form all-time top 3 by distance — its own Redis keys, never wooftag:*.
+ * Hosky Star Form all-time top 5 (LB.top) by distance — its own Redis keys, never wooftag:*.
  *
- *   qw:starform:top3:dist     ZSET  member = JSON {id,name,distance,at}, score = distance (ls)
+ *   qw:starform:top3:dist     ZSET  member = JSON {id,name,distance,at,social?}, score = distance (ls)
+ *                                   (key name kept from the top-3 days so existing entries carry over;
+ *                                    `social` = optional {p,h}, absent on older entries)
  *   qw:starform:run:<id>      STR   run-start timestamp (ms), single use, short TTL
  *   qw:starform:rl:<ip>       INT   rate-limit counter (TTL = window)
  *   qw:starform:rl:start:<ip> INT   rate-limit counter for run starts
  *
  * The older points board (`qw:starform:top3`) is left untouched and unused.
  * Insert + trim run in one Lua script, so concurrent posts can never leave
- * more than three entries or lose a farther run.
+ * more than LB.top entries or lose a farther run.
  */
 import { Redis } from "@upstash/redis";
 import { LB, RUN_PREFIX, TOP3_KEY } from "./config";
+import { readSocial, type Social } from "./social";
 
-export type TopEntry = { id: string; name: string; distance: number; at: string };
+export type TopEntry = { id: string; name: string; distance: number; at: string; social?: Social };
 
 export type StarFormStore = {
   kind: "upstash" | "memory";
@@ -42,7 +45,7 @@ return 1
 
 function parseMember(raw: unknown): TopEntry | null {
   try {
-    const o = (typeof raw === "string" ? JSON.parse(raw) : raw) as Partial<TopEntry> | null;
+    const o = (typeof raw === "string" ? JSON.parse(raw) : raw) as (Partial<Omit<TopEntry, "social">> & { social?: unknown }) | null;
     if (
       o &&
       typeof o.id === "string" &&
@@ -50,12 +53,18 @@ function parseMember(raw: unknown): TopEntry | null {
       typeof o.distance === "number" &&
       typeof o.at === "string"
     ) {
-      return { id: o.id, name: o.name, distance: o.distance, at: o.at };
+      const social = readSocial(o.social);
+      return social ? { id: o.id, name: o.name, distance: o.distance, at: o.at, social } : { id: o.id, name: o.name, distance: o.distance, at: o.at };
     }
   } catch {
     /* ignore */
   }
   return null;
+}
+
+/** What the public board shows for an entry (no internal id). */
+export function publicRow(e: TopEntry) {
+  return e.social ? { name: e.name, distance: e.distance, at: e.at, social: e.social } : { name: e.name, distance: e.distance, at: e.at };
 }
 
 class RedisTop3 implements StarFormStore {

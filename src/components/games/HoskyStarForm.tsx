@@ -21,10 +21,12 @@ import {
 import { useHydrated } from "@/hooks/useHydrated";
 import { formatDistance } from "@/lib/starform/distance";
 import { StarForm, chainMultiplier } from "@/lib/starform/engine";
+import { SOCIALS, SOCIAL_IDS, cleanHandle, isSocialId, profileUrl, validHandle, type Social, type SocialId } from "@/lib/starform/social";
+import { SocialGlyph } from "./SocialGlyph";
 import { applyEvents, createFx, draw, fitView, stepFx, type Fx } from "./starFormRender";
 
 type Phase = "intro" | "playing" | "over";
-type TopRow = { name: string; distance: number; at: string };
+type TopRow = { name: string; distance: number; at: string; social?: Social };
 type Summary = ReturnType<StarForm["summary"]>;
 
 type Hud = {
@@ -46,6 +48,7 @@ type Hud = {
 
 const BEST_KEY = "qw-starform-best-dist"; // light-seconds; the old points best used a different key
 const NAME_KEY = "qw-starform-name";
+const SOCIAL_KEY = "qw-starform-social"; // {p,h} remembered on this device only
 const HELD_TAP_MS = 220;
 /** Tap-to-compress on the cloud: max press time, max finger/mouse travel, and how close to the cloud. */
 const TAP_MS = 260;
@@ -93,29 +96,55 @@ function Paws({ lives }: { lives: number }) {
   );
 }
 
+/** One board line: name + tiny app logo, and the @handle on a grey line underneath (both open the profile). */
+function BoardRow({ r, i, me }: { r: TopRow; i: number; me: boolean }) {
+  // Rebuild + re-check the link here too: only whitelisted handles on fixed https:// bases ever render.
+  const url = r.social ? profileUrl(r.social) : null;
+  const s = url ? r.social! : null;
+  const link = { href: url ?? undefined, target: "_blank", rel: "noopener noreferrer nofollow" } as const;
+  return (
+    <li className={`flex items-center justify-between gap-3 text-sm ${me ? "text-gold" : "text-slate"}`} data-testid="sf-board-row">
+      <span className="flex min-w-0 items-center">
+        <span className="mr-2 shrink-0 font-mono text-slate-muted">{i + 1}.</span>
+        <span className="min-w-0">
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span className="truncate">{r.name}</span>
+            {s && (
+              <a
+                {...link}
+                aria-label={`${r.name} on ${SOCIALS[s.p].label}: @${s.h}`}
+                title={`${SOCIALS[s.p].label} · @${s.h}`}
+                className="inline-flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full border border-white/20 bg-white/[0.06] text-slate hover:border-gold hover:text-gold"
+                data-testid="sf-board-social"
+              >
+                <SocialGlyph id={s.p} size={11} />
+              </a>
+            )}
+          </span>
+          {s && (
+            <a {...link} tabIndex={-1} className="block truncate font-mono text-[0.65rem] leading-tight text-slate-muted hover:text-gold" data-testid="sf-board-handle">
+              @{s.h}
+            </a>
+          )}
+        </span>
+      </span>
+      <span className="shrink-0 font-mono text-white">{formatDistance(r.distance).text}</span>
+    </li>
+  );
+}
+
 function TopBoard({ top, available, highlightDistance }: { top: TopRow[]; available: boolean; highlightDistance?: number }) {
   return (
     <div className="rounded-xl border border-white/10 bg-black/30 p-3">
-      <p className="card-label mb-2 text-gold-dim">All-time top 3 · farthest</p>
+      <p className="card-label mb-2 text-gold-dim">All-time top {LB.top} · farthest</p>
       {!available ? (
         <p className="text-xs text-slate-muted">Global board is napping right now. Your best is saved on this device.</p>
       ) : top.length === 0 ? (
         <p className="text-xs text-slate-muted">No runs yet — be the first Hosky pup on the board.</p>
       ) : (
-        <ol className="space-y-1">
+        <ol className="space-y-1.5">
           {top.map((r, i) => (
-            <li
-              key={`${r.name}-${r.at}-${i}`}
-              className={`flex items-center justify-between gap-3 text-sm ${
-                highlightDistance !== undefined && highlightDistance === r.distance ? "text-gold" : "text-slate"
-              }`}
-            >
-              <span className="truncate">
-                <span className="mr-2 font-mono text-slate-muted">{i + 1}.</span>
-                {r.name}
-              </span>
-              <span className="font-mono text-white">{formatDistance(r.distance).text}</span>
-            </li>
+            <BoardRow key={`${r.name}-${r.at}-${i}`} r={r} i={i} me={highlightDistance !== undefined && highlightDistance === r.distance} />
           ))}
         </ol>
       )}
@@ -175,6 +204,8 @@ export function HoskyStarForm() {
   const [top, setTop] = useState<TopRow[]>([]);
   const [boardOk, setBoardOk] = useState(true);
   const [name, setName] = useState("");
+  const [socialP, setSocialP] = useState<SocialId | "none">("none");
+  const [handle, setHandle] = useState("");
   const [post, setPost] = useState<"idle" | "sending" | "done" | "lost" | "error">("idle");
   const [postMsg, setPostMsg] = useState("");
 
@@ -194,6 +225,11 @@ export function HoskyStarForm() {
     setBest(readBest());
     try {
       setName(localStorage.getItem(NAME_KEY) ?? "");
+      const saved = JSON.parse(localStorage.getItem(SOCIAL_KEY) ?? "null") as { p?: unknown; h?: unknown } | null;
+      if (saved && isSocialId(saved.p) && typeof saved.h === "string") {
+        setSocialP(saved.p);
+        setHandle(saved.h.slice(0, SOCIALS[saved.p].max));
+      }
     } catch {
       /* ignore */
     }
@@ -350,7 +386,7 @@ export function HoskyStarForm() {
 
   // A new service worker takes over (skipWaiting + clientsClaim): reload onto the fresh game
   // code only before the first run. Once a run has started we never reload by ourselves — that
-  // used to wipe the results screen (and the top-3 entry) at game over; the next visit gets the
+  // used to wipe the results screen (and the top-5 entry) at game over; the next visit gets the
   // new code anyway.
   const phaseRef = useRef(phase);
   useEffect(() => {
@@ -786,7 +822,10 @@ export function HoskyStarForm() {
     setCompress(false, tap ? !c.latched : false);
   };
 
-  // ---- top 3 submit
+  // ---- top 5 submit (optional social handle, checked here and again on the server)
+  const handleClean = cleanHandle(handle);
+  const handleBad = socialP !== "none" && handleClean !== "" && !validHandle(socialP, handleClean);
+  const social: Social | null = socialP !== "none" && handleClean && !handleBad ? { p: socialP, h: handleClean } : null;
   const qualifies =
     summary !== null &&
     summary.detonations.length > 0 &&
@@ -798,9 +837,11 @@ export function HoskyStarForm() {
     e.preventDefault();
     if (!summary || post === "sending" || post === "done") return;
     const clean = name.trim();
-    if (!clean) return;
+    if (!clean || handleBad) return;
     try {
       localStorage.setItem(NAME_KEY, clean);
+      if (social) localStorage.setItem(SOCIAL_KEY, JSON.stringify(social));
+      else localStorage.removeItem(SOCIAL_KEY);
     } catch {
       /* ignore */
     }
@@ -814,6 +855,7 @@ export function HoskyStarForm() {
           runId,
           steps: summary.steps,
           detonations: summary.detonations,
+          ...(social ? { social } : {}),
         }),
       });
       const data = (await res.json()) as { ok?: boolean; placed?: boolean; top?: TopRow[]; message?: string };
@@ -1072,35 +1114,94 @@ export function HoskyStarForm() {
               )}
             </p>
 
-            <TopBoard top={top} available={boardOk} highlightDistance={post === "done" ? summary.distance : undefined} />
-
             {qualifies && post !== "done" && post !== "lost" && (
               <form onSubmit={submitScore} className="rounded-xl border border-gold/40 bg-gold/[0.06] p-3" data-testid="sf-name-form">
-                <p className="text-sm font-semibold text-gold">That run makes the all-time top 3!</p>
+                <p className="text-sm font-semibold text-gold">That run makes the all-time top {LB.top}!</p>
                 <div className="mt-2 flex gap-2">
                   <input
                     value={name}
                     onChange={(e) => setName(e.target.value.replace(/[^\p{L}\p{N} _.\-]/gu, "").slice(0, LB.nameMax))}
                     maxLength={LB.nameMax}
                     placeholder="Display name"
-                    aria-label="Display name for the top 3 board"
+                    aria-label={`Display name for the top ${LB.top} board`}
+                    data-testid="sf-name"
                     className="min-w-0 flex-1 rounded-lg border border-white/20 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-gold"
                   />
                   <button
                     type="submit"
-                    disabled={post === "sending" || !name.trim()}
+                    data-testid="sf-post"
+                    disabled={post === "sending" || !name.trim() || handleBad}
                     className="rounded-lg bg-gold px-4 py-2 text-sm font-semibold text-navy disabled:opacity-50"
                   >
                     {post === "sending" ? "Posting…" : "Post"}
                   </button>
                 </div>
-                <p className="mt-1 text-[0.7rem] text-slate-muted">Up to {LB.nameMax} letters/numbers. Shown publicly.</p>
+                <p className="mt-1 text-[0.7rem] text-slate-muted">Any name you like · up to {LB.nameMax} letters/numbers. Shown publicly.</p>
+
+                <div className="mt-3 border-t border-white/10 pt-2.5">
+                  <p className="text-[0.72rem] text-slate" id="sf-social-label">
+                    Add your social handle <span className="text-slate-muted">(optional)</span>
+                  </p>
+                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5" role="radiogroup" aria-labelledby="sf-social-label" data-testid="sf-social">
+                    {(["none", ...SOCIAL_IDS] as const).map((id) => {
+                      const on = id === socialP;
+                      return (
+                        <button
+                          key={id}
+                          type="button"
+                          role="radio"
+                          aria-checked={on}
+                          aria-label={id === "none" ? "No social handle" : SOCIALS[id].label}
+                          title={id === "none" ? "None" : SOCIALS[id].label}
+                          data-testid={`sf-social-${id}`}
+                          onClick={() => setSocialP(id)}
+                          className={`flex h-9 w-9 items-center justify-center rounded-full border transition ${
+                            on ? "border-gold bg-gold/20 text-gold shadow-[0_0_14px_rgba(245,197,66,0.35)]" : "border-white/15 bg-black/30 text-slate hover:text-white"
+                          }`}
+                        >
+                          <SocialGlyph id={id} size={17} />
+                        </button>
+                      );
+                    })}
+                    <span className="ml-1 text-[0.68rem] text-slate-muted">{socialP === "none" ? "None" : SOCIALS[socialP].label}</span>
+                  </div>
+                  {socialP !== "none" && (
+                    <div className="mt-2">
+                      <div className={`flex overflow-hidden rounded-lg border bg-black/40 ${handleBad ? "border-red-300/70" : "border-gold/60 focus-within:border-gold"}`}>
+                        <span className="flex items-center gap-1.5 border-r border-white/10 bg-white/[0.04] px-2.5 text-sm text-slate" aria-hidden>
+                          <SocialGlyph id={socialP} size={14} />
+                          {SOCIALS[socialP].prefix}
+                        </span>
+                        <input
+                          value={handle}
+                          onChange={(e) => setHandle(e.target.value.replace(/\s/g, "").replace(/^@+/, "").slice(0, SOCIALS[socialP].max + 1))}
+                          placeholder="yourhandle"
+                          aria-label={`${SOCIALS[socialP].label} handle`}
+                          aria-invalid={handleBad}
+                          autoCapitalize="none"
+                          autoCorrect="off"
+                          spellCheck={false}
+                          inputMode="text"
+                          data-testid="sf-handle"
+                          className="min-w-0 flex-1 bg-transparent px-2.5 py-2 font-mono text-sm text-white outline-none"
+                        />
+                      </div>
+                      <p className={`mt-1 text-[0.68rem] ${handleBad ? "text-red-300" : "text-slate-muted"}`} data-testid="sf-handle-hint">
+                        {handleBad
+                          ? `${SOCIALS[socialP].label} handles: ${SOCIALS[socialP].rule}.`
+                          : `Shown as a tiny ${SOCIALS[socialP].label} logo next to your name on the board. Leave empty to skip.`}
+                      </p>
+                    </div>
+                  )}
+                </div>
                 {post === "error" && <p className="mt-1 text-xs text-red-300">{postMsg}</p>}
               </form>
             )}
             {(post === "done" || post === "lost") && (
               <p className={`text-sm ${post === "done" ? "text-gold" : "text-slate"}`}>{postMsg}</p>
             )}
+
+            <TopBoard top={top} available={boardOk} highlightDistance={post === "done" ? summary.distance : undefined} />
 
             <div className="rounded-xl border border-white/10 bg-black/30 p-3">
               <p className="card-label mb-2">Stars made</p>

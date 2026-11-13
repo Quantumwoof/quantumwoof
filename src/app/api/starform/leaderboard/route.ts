@@ -1,10 +1,10 @@
 import { json } from "@/lib/wooftag-http";
-import { getStarFormStore } from "@/lib/starform/store";
+import { getStarFormStore, publicRow } from "@/lib/starform/store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/** Public read: the all-time top 3 by farthest distance (names + distance in light-seconds only). */
+/** Public read: the all-time top 5 by farthest distance (name, distance in light-seconds, optional social handle). */
 export async function GET() {
   const store = getStarFormStore();
   if (!store) return json({ ok: true, available: false, top: [] });
@@ -13,7 +13,7 @@ export async function GET() {
     return json({
       ok: true,
       available: true,
-      top: top.map((e) => ({ name: e.name, distance: e.distance, at: e.at })),
+      top: top.map(publicRow),
     });
   } catch (err) {
     console.error("[starform/leaderboard]", err instanceof Error ? err.message : "error");

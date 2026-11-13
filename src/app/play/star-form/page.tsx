@@ -17,7 +17,7 @@ export default function StarFormPage() {
         <p className="card-label mb-1 hidden text-lavender sm:block">Woof game · competitive</p>
         <h1 className="text-2xl font-semibold tracking-tight text-white sm:text-3xl">Hosky Star Form</h1>
         <p className="mt-1 max-w-2xl text-sm text-slate sm:mt-2 sm:text-base">
-          Gather gas, make stars for speed boosts, and travel farther than anyone — the all-time top 3 is ranked by distance.{" "}
+          Gather gas, make stars for speed boosts, and travel farther than anyone — the all-time top 5 is ranked by distance.{" "}
           <Link href="/" className="text-electric hover:underline">
             Back to the garden
           </Link>

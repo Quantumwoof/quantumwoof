@@ -2,7 +2,8 @@ import type { NextRequest } from "next/server";
 import { clientIp, json, methodNotAllowed } from "@/lib/wooftag-http";
 import { rejectForeignOrigin } from "@/lib/request-origin";
 import { newOpaqueId } from "@/lib/wooftag";
-import { getStarFormStore } from "@/lib/starform/store";
+import { getStarFormStore, publicRow } from "@/lib/starform/store";
+import { parseSocial } from "@/lib/starform/social";
 import { elapsedLooksRight, parseRun, verifyRun } from "@/lib/starform/validate";
 
 export const runtime = "nodejs";
@@ -14,7 +15,7 @@ export function GET() {
   return methodNotAllowed("POST");
 }
 
-/** Post a finished run to the all-time top 3. Only top-3 distances are stored. */
+/** Post a finished run to the all-time top 5. Only top-5 distances are stored (with an optional social handle). */
 export async function POST(req: NextRequest) {
   const forbidden = rejectForeignOrigin(req);
   if (forbidden) return forbidden;
@@ -54,6 +55,11 @@ export async function POST(req: NextRequest) {
   if (!parsed.ok) {
     return json({ ok: false, error: parsed.error, message: "That run could not be read." }, { status: 400 });
   }
+  // Optional social handle: whitelisted per platform; anything odd is refused, not stored.
+  const social = parseSocial((body as { social?: unknown }).social);
+  if (social === "invalid") {
+    return json({ ok: false, error: "bad_social", message: "That handle doesn't look right for that app." }, { status: 400 });
+  }
   const verdict = verifyRun(parsed.run);
   if (!verdict.ok) {
     return json({ ok: false, error: "invalid_run", message: "That run did not add up." }, { status: 422 });
@@ -73,12 +79,13 @@ export async function POST(req: NextRequest) {
     name: parsed.run.name,
     distance: verdict.distance,
     at: new Date().toISOString(),
+    ...(social ? { social } : {}),
   });
   const top = await store.top3();
   return json({
     ok: true,
     placed,
     distance: verdict.distance,
-    top: top.map((e) => ({ name: e.name, distance: e.distance, at: e.at })),
+    top: top.map(publicRow),
   });
 }

@@ -78,9 +78,10 @@ describe("starform routes", () => {
     expect((await scorePOST(post("/api/starform/score", ok, body))).status).toBe(422);
   });
 
-  test("only the farthest 3 stay; a shorter run does not place", async () => {
+  test("only the farthest 5 stay; a shorter run does not place", async () => {
+    expect(LB.top).toBe(5);
     let i = 0;
-    for (const n of [5, 6, 7, 8]) {
+    for (const n of [3, 4, 5, 6, 7, 8]) {
       i++;
       const body = runBody(`P${i}`, n, `ABCDEFGH0${i}`);
       await startedRun(body.steps, body.runId);
@@ -91,7 +92,50 @@ describe("starform routes", () => {
     const res = (await (await scorePOST(post("/api/starform/score", ok, low, "9.9.9.9"))).json()) as { placed: boolean };
     expect(res.placed).toBe(false);
     const board = (await (await boardGET()).json()) as { top: { name: string }[] };
-    expect(board.top.map((t) => t.name)).toEqual(["P4", "P3", "P2"]);
+    expect(board.top.map((t) => t.name)).toEqual(["P6", "P5", "P4", "P3", "P2"]);
+  });
+
+  test("optional social handle is stored and shown; none stays none", async () => {
+    const a = { ...runBody("Pup", 4, "ABCDEFGH31"), social: { p: "x", h: "@qtmwoof" } };
+    await startedRun(a.steps, a.runId);
+    const ra = await scorePOST(post("/api/starform/score", ok, a, "5.5.5.1"));
+    expect(ra.status).toBe(200);
+    const b = runBody("Plain", 3, "ABCDEFGH32");
+    await startedRun(b.steps, b.runId);
+    expect((await scorePOST(post("/api/starform/score", ok, b, "5.5.5.2"))).status).toBe(200);
+    const c = { ...runBody("Empty", 2, "ABCDEFGH33"), social: { p: "ig", h: "  " } }; // picked an app, typed nothing
+    await startedRun(c.steps, c.runId);
+    expect((await scorePOST(post("/api/starform/score", ok, c, "5.5.5.3"))).status).toBe(200);
+    const board = (await (await boardGET()).json()) as { top: { name: string; social?: { p: string; h: string } }[] };
+    expect(board.top[0]).toMatchObject({ name: "Pup", social: { p: "x", h: "qtmwoof" } });
+    expect(board.top[1].social).toBeUndefined();
+    expect(board.top[2].social).toBeUndefined();
+    expect(JSON.stringify(board.top[0])).not.toContain("id");
+  });
+
+  test("bad or hostile social handles are refused (400) and nothing is stored", async () => {
+    const evil = [
+      { p: "x", h: "<script>alert(1)</script>" },
+      { p: "x", h: "javascript:alert(1)" },
+      { p: "ig", h: "a\"onmouseover=\"x" },
+      { p: "yt", h: "https://evil.example/@x" },
+      { p: "tg", h: "ab" },
+      { p: "tt", h: "x".repeat(80) },
+      { p: "myspace", h: "tom" },
+      { p: "x", h: 42 },
+      "x:qtmwoof",
+      [{ p: "x", h: "a" }],
+    ];
+    let k = 40;
+    for (const social of evil) {
+      const body = { ...runBody("Evil", 3, `ABCDEFGH${k}`), social };
+      await startedRun(body.steps, body.runId);
+      const res = await scorePOST(post("/api/starform/score", ok, body, `6.6.6.${k++}`));
+      expect(res.status).toBe(400);
+      expect(((await res.json()) as { error: string }).error).toBe("bad_social");
+    }
+    const board = (await (await boardGET()).json()) as { top: unknown[] };
+    expect(board.top.length).toBe(0);
   });
 
   test("tampered timing, junk, oversized and bad names are rejected", async () => {
