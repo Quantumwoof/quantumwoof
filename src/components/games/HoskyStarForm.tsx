@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import { DISTANCE_TEACH, OBSTACLE_TEACH, STAR_FORM_INTRO, STAR_FORM_NOTE, STAR_FORM_TRAVEL, STAR_TEACH } from "@/content/starForm";
 import {
   COMBO_STEPS,
@@ -218,7 +218,17 @@ export function HoskyStarForm() {
     ro.observe(wrap);
     if (hudRef.current) ro.observe(hudRef.current);
     if (ctrlRef.current) ro.observe(ctrlRef.current);
-    return () => ro.disconnect();
+    // mobile URL bar / keyboard / rotation: re-fit on viewport changes too
+    const vv = window.visualViewport;
+    window.addEventListener("resize", fit);
+    window.addEventListener("orientationchange", fit);
+    vv?.addEventListener("resize", fit);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", fit);
+      window.removeEventListener("orientationchange", fit);
+      vv?.removeEventListener("resize", fit);
+    };
   }, []);
 
   const pushHud = useCallback((g: StarForm) => {
@@ -358,6 +368,71 @@ export function HoskyStarForm() {
   useEffect(() => {
     exitImmersiveRef.current = exitImmersive;
   }, [exitImmersive]);
+  // position:fixed is trapped by any ancestor with transform / filter / backdrop-filter /
+  // contain / will-change (the page's .bento-card has backdrop-filter + isolation), which made
+  // the "full screen" overlay a box inside the card wherever the Fullscreen API isn't granted
+  // (in-app browsers, some Android browsers, iOS). Neutralise those ancestors while immersive.
+  useLayoutEffect(() => {
+    if (!immersive) return;
+    const saved: [HTMLElement, string][] = [];
+    for (let el = stageRef.current?.parentElement; el && el !== document.documentElement; el = el.parentElement) {
+      const cs = getComputedStyle(el) as CSSStyleDeclaration & { webkitBackdropFilter?: string };
+      const traps =
+        cs.transform !== "none" ||
+        cs.filter !== "none" ||
+        (cs.backdropFilter && cs.backdropFilter !== "none") ||
+        (cs.webkitBackdropFilter && cs.webkitBackdropFilter !== "none") ||
+        cs.perspective !== "none" ||
+        (cs.contain && cs.contain !== "none") ||
+        /transform|filter|perspective/.test(cs.willChange) ||
+        cs.isolation === "isolate" ||
+        (cs.zIndex !== "auto" && cs.position !== "static");
+      if (!traps) continue;
+      saved.push([el, el.getAttribute("style") ?? ""]);
+      el.style.setProperty("transform", "none", "important");
+      el.style.setProperty("filter", "none", "important");
+      el.style.setProperty("backdrop-filter", "none", "important");
+      el.style.setProperty("-webkit-backdrop-filter", "none", "important");
+      el.style.setProperty("perspective", "none", "important");
+      el.style.setProperty("contain", "none", "important");
+      el.style.setProperty("will-change", "auto", "important");
+      el.style.setProperty("isolation", "auto", "important");
+      el.style.setProperty("z-index", "auto", "important");
+    }
+    return () => {
+      for (const [el, st] of saved) {
+        if (st) el.setAttribute("style", st);
+        else el.removeAttribute("style");
+      }
+    };
+  }, [immersive]);
+
+  // Stale-bundle guard: if the live deployment's build differs from this bundle (an old service
+  // worker or installed app kept old code), reload once — never mid-run.
+  useEffect(() => {
+    const mine = process.env.NEXT_PUBLIC_BUILD_ID;
+    if (!mine || mine === "dev") return;
+    const check = () => {
+      if (phaseRef.current === "playing") return;
+      fetch("/api/version", { cache: "no-store" })
+        .then((r) => r.json())
+        .then((d: { build?: string }) => {
+          if (!d.build || d.build === "dev" || d.build === mine) return;
+          const key = "qw-sf-reloaded-for";
+          if (sessionStorage.getItem(key) === d.build) return; // one try per build
+          sessionStorage.setItem(key, d.build);
+          window.location.reload();
+        })
+        .catch(() => {});
+    };
+    check();
+    const onVis = () => {
+      if (document.visibilityState === "visible") check();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, []);
+
   // No page scroll, pull-to-refresh or overscroll bounce behind the game while immersive.
   useEffect(() => {
     if (!immersive) return;
@@ -368,8 +443,26 @@ export function HoskyStarForm() {
     body.style.overflow = "hidden";
     html.style.overscrollBehavior = "none";
     body.style.overscrollBehavior = "none";
-    return () => {
+    const restore = () => {
       [html.style.overflow, body.style.overflow, html.style.overscrollBehavior, body.style.overscrollBehavior] = prev;
+    };
+    // Safety net: never lock scrolling unless the overlay really covers the screen — if some
+    // browser still boxes it in, give scrolling back so DETONATE stays reachable.
+    let raf = requestAnimationFrame(() => {
+      raf = requestAnimationFrame(() => {
+        const st = stageRef.current;
+        if (!st) return;
+        const r = st.getBoundingClientRect();
+        const covers = r.top <= 2 && r.left <= 2 && r.width >= window.innerWidth - 4 && r.height >= window.innerHeight - 4;
+        if (!covers) {
+          restore();
+          st.scrollIntoView({ block: "start" });
+        }
+      });
+    });
+    return () => {
+      cancelAnimationFrame(raf);
+      restore();
     };
   }, [immersive]);
 
@@ -815,9 +908,11 @@ export function HoskyStarForm() {
             <p className="text-xl font-semibold text-white">Paused</p>
             <button
               type="button"
+              data-testid="sf-resume"
               onClick={() => {
                 pausedRef.current = false;
                 setPaused(false);
+                if (!immersive) enterImmersive(); // resuming always goes back to full screen
               }}
               className="rounded-full bg-electric px-6 py-2 text-sm font-semibold text-navy"
             >

@@ -68,6 +68,8 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  // Baked into the client bundle; /api/version reports the live one so stale clients can reload.
+  env: { NEXT_PUBLIC_BUILD_ID: process.env.VERCEL_GIT_COMMIT_SHA || process.env.NEXT_PUBLIC_BUILD_ID || "dev" },
   // next-pwa injects webpack; keep turbopack key so Next 16 stays quiet in dev.
   turbopack: {},
   // Star Form is the only Woof game now: the old /play hub (Constellation Connect, Fetch the
