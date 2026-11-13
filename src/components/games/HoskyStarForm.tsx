@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import { DISTANCE_TEACH, OBSTACLE_TEACH, STAR_FORM_INTRO, STAR_FORM_NOTE, STAR_FORM_TRAVEL, STAR_TEACH } from "@/content/starForm";
 import {
+  BANK,
   COMBO_STEPS,
   COMBO_WINDOW_SEC,
   DETONATE_MIN_EFF_MASS,
@@ -36,6 +37,11 @@ type Hud = {
   chain: number; // next chain multiplier shown
   chainLeft: number;
   canDet: boolean;
+  /** Saved stars (oldest first) and whether SAVE STAR would work right now. */
+  bank: SpectralId[];
+  canSave: boolean;
+  /** Ready to deploy a saved star (cooldown over). */
+  canDeploy: boolean;
 };
 
 const BEST_KEY = "qw-starform-best-dist"; // light-seconds; the old points best used a different key
@@ -73,7 +79,7 @@ async function fetchBoard(): Promise<{ available: boolean; top: TopRow[] }> {
   }
 }
 
-const EMPTY_HUD: Hud = { lives: START_LIVES, distance: 0, speed: 1, type: "M", progress: 0, chain: 1, chainLeft: 0, canDet: false };
+const EMPTY_HUD: Hud = { lives: START_LIVES, distance: 0, speed: 1, type: "M", progress: 0, chain: 1, chainLeft: 0, canDet: false, bank: [], canSave: false, canDeploy: false };
 
 function Paws({ lives }: { lives: number }) {
   return (
@@ -140,7 +146,12 @@ export function HoskyStarForm() {
   const gameRef = useRef<StarForm | null>(null);
   const fxRef = useRef<Fx | null>(null);
   const sizeRef = useRef({ width: 400, height: 500, dpr: 1, insetTop: 0, insetBottom: 0 });
+  /** The sim is held while either the player paused or the "you made an O" choice is open. */
   const pausedRef = useRef(false);
+  const userPausedRef = useRef(false);
+  const choiceRef = useRef(false);
+  /** cloudSerial the O choice was last offered for (once per cloud). */
+  const offeredRef = useRef(-1);
   const keysRef = useRef(new Set<string>());
   const compressRef = useRef({ held: false, latched: false, pressAt: 0 });
   const hudKeyRef = useRef("");
@@ -149,7 +160,13 @@ export function HoskyStarForm() {
   const [runId, setRunId] = useState<string | null>(null);
 
   const [phase, setPhase] = useState<Phase>("intro");
-  const [paused, setPaused] = useState(false);
+  const [paused, setPausedState] = useState(false);
+  const [oChoice, setOChoice] = useState<{ left: number } | null>(null);
+  const setPaused = useCallback((v: boolean) => {
+    userPausedRef.current = v;
+    pausedRef.current = v || choiceRef.current;
+    setPausedState(v);
+  }, []);
   const [hud, setHud] = useState<Hud>(EMPTY_HUD);
   const [compressUi, setCompressUi] = useState({ held: false, latched: false });
   const [summary, setSummary] = useState<Summary | null>(null);
@@ -247,6 +264,9 @@ export function HoskyStarForm() {
       chain: chainMultiplier(g.nextChainIndex()),
       chainLeft: Math.round(g.chainLeft() * 10) / 10,
       canDet: g.canDetonate(),
+      bank: [...g.bank],
+      canSave: g.canSave(),
+      canDeploy: !g.ended && g.detCooldown <= 0 && g.bank.length > 0,
     };
     const now = performance.now();
     // distance ticks every frame — repaint the HUD about 12×/s, plus instantly on other changes
@@ -282,10 +302,44 @@ export function HoskyStarForm() {
     [loadBoard],
   );
 
+  /** Close the O choice with "detonate" or "save" and let the sim run again. */
+  const resolveChoice = useCallback((action: "detonate" | "save") => {
+    const g = gameRef.current;
+    if (!choiceRef.current) return;
+    choiceRef.current = false;
+    setOChoice(null);
+    pausedRef.current = userPausedRef.current;
+    if (!g || g.ended) return;
+    if (action === "save" && g.canSave()) g.saveStar();
+    else g.detonate();
+  }, []);
   const detonate = useCallback(() => {
     const g = gameRef.current;
+    if (choiceRef.current) return resolveChoice("detonate");
     if (g && !pausedRef.current) g.detonate();
+  }, [resolveChoice]);
+  const saveStar = useCallback(() => {
+    const g = gameRef.current;
+    if (choiceRef.current) return resolveChoice("save");
+    if (g && !pausedRef.current) g.saveStar();
+  }, [resolveChoice]);
+  const deployStar = useCallback((slot: number) => {
+    const g = gameRef.current;
+    if (g && !pausedRef.current) g.deployStar(slot);
   }, []);
+  // The O choice counts down only while the page is visible and not paused, then detonates.
+  const choiceOpen = oChoice !== null;
+  useEffect(() => {
+    if (!choiceOpen) return;
+    let left: number = BANK.oChoiceSec;
+    const id = window.setInterval(() => {
+      if (document.hidden || userPausedRef.current) return;
+      left = Math.max(0, left - 0.1);
+      if (left <= 0) resolveChoice("detonate");
+      else setOChoice({ left });
+    }, 100);
+    return () => window.clearInterval(id);
+  }, [choiceOpen, resolveChoice]);
 
   const setCompress = useCallback((held: boolean, latched: boolean) => {
     const c = compressRef.current;
@@ -340,12 +394,9 @@ export function HoskyStarForm() {
     }
   }, []);
   const leaveFullView = useCallback(() => {
-    if (phaseRef.current === "playing") {
-      pausedRef.current = true;
-      setPaused(true);
-    }
+    if (phaseRef.current === "playing") setPaused(true);
     exitImmersive();
-  }, [exitImmersive]);
+  }, [exitImmersive, setPaused]);
   // Esc / the browser's own "exit full screen": leave immersive mode and pause the run.
   useEffect(() => {
     const onFs = () => {
@@ -475,6 +526,7 @@ export function HoskyStarForm() {
         cloud: { x: gg.cloud.x, y: gg.cloud.y, mass: gg.cloud.mass },
         type: gg.currentType(),
         canDet: gg.canDetonate(),
+        bank: [...gg.bank],
         remnants: gg.remnants.map((r) => ({ type: r.type, x: r.x, y: r.y, life: r.life })),
         gas: gg.gas.map((q) => ({ x: q.x, y: q.y })),
         obstacles: gg.obstacles.filter((o) => o.warn <= 0).map((o) => ({ x: o.x, y: o.y })),
@@ -495,7 +547,9 @@ export function HoskyStarForm() {
     fxRef.current = createFx(reduced);
     overAtRef.current = null;
     hudKeyRef.current = "";
-    pausedRef.current = false;
+    choiceRef.current = false;
+    offeredRef.current = -1;
+    setOChoice(null);
     setPaused(false);
     setCompress(false, false);
     setHud(EMPTY_HUD);
@@ -511,7 +565,7 @@ export function HoskyStarForm() {
         }
       })
       .catch(() => {});
-  }, [setCompress, enterImmersive]);
+  }, [setCompress, enterImmersive, setPaused]);
 
   // ---- game loop
   useEffect(() => {
@@ -553,6 +607,15 @@ export function HoskyStarForm() {
           stepFx(fx, STEP, g);
           if (g.ended && overAtRef.current === null) overAtRef.current = now;
           if (g.ended) break;
+          // Just reached O: hold the sim and offer SAVE or DETONATE (once per cloud).
+          if (!choiceRef.current && offeredRef.current !== g.cloudSerial && g.currentType() === "O" && g.canDetonate()) {
+            offeredRef.current = g.cloudSerial;
+            choiceRef.current = true;
+            pausedRef.current = true;
+            acc = 0;
+            setOChoice({ left: BANK.oChoiceSec });
+            break;
+          }
         }
       }
 
@@ -592,9 +655,12 @@ export function HoskyStarForm() {
         setCompress(true, compressRef.current.latched);
       } else if (key === "Enter" || key === "e" || key === "Shift") {
         detonate();
+      } else if (key === "q") {
+        saveStar();
+      } else if (key === "1" || key === "2" || key === "3") {
+        deployStar(Number(key) - 1);
       } else if (key === "p" || key === "Escape") {
-        pausedRef.current = !pausedRef.current;
-        setPaused(pausedRef.current);
+        setPaused(!userPausedRef.current);
       } else {
         keysRef.current.add(key);
       }
@@ -615,10 +681,7 @@ export function HoskyStarForm() {
       }
     };
     const vis = () => {
-      if (document.hidden) {
-        pausedRef.current = true;
-        setPaused(true);
-      }
+      if (document.hidden) setPaused(true);
     };
     window.addEventListener("keydown", down);
     window.addEventListener("keyup", up);
@@ -630,7 +693,7 @@ export function HoskyStarForm() {
       document.removeEventListener("visibilitychange", vis);
       keys.clear();
     };
-  }, [phase, detonate, setCompress]);
+  }, [phase, detonate, saveStar, deployStar, setCompress, setPaused]);
 
   // ---- pointer steering on the canvas
   const pointer = useRef<{ id: number | null; x: number; y: number; sx: number; sy: number; at: number; onCloud: boolean }>({
@@ -776,6 +839,7 @@ export function HoskyStarForm() {
 
   const typeSpec = SPECTRAL[hud.type];
   const compressOn = compressUi.held || compressUi.latched;
+  const starsMade = summary ? SPECTRAL_ORDER.reduce((n, k) => n + summary.counts[k], 0) : 0;
   const topType = summary
     ? SPECTRAL_ORDER.find((k) => summary.counts[k] > 0)
     : undefined;
@@ -883,6 +947,7 @@ export function HoskyStarForm() {
               <li>You cruise through the Milky Way and <span className="text-electric">distance</span> is your score. It rolls up from light-seconds to light-years (a <em>game scale</em>, not real physics).</li>
               <li><span className="text-electric">Drag</span> to steer your gas cloud and swallow the smoke wisps. Gas is always safe. <span className="text-electric">Tap your cloud</span> to switch COMPRESS on or off (a ring shows it&rsquo;s on), or <span className="text-electric">hold</span> COMPRESS (or tap to toggle) to pack mass in — a loose cloud slowly leaks it, and a bigger cloud needs more gas to grow.</li>
               <li><span className="text-gold">DETONATE</span> to make a star: it gives a <span className="text-gold">speed boost</span> that fades over a few seconds — bigger stars boost far more — and leaves a remnant that <span className="text-gold">hunts hazards</span> for you. Remnants roam the arena and get stronger up the ladder — K, G, F, A, then B and O: B&rsquo;s neutron star drifts toward crowds, pulls hazards in and cuts them down with its beams; O&rsquo;s black hole pulls hardest, swallows what reaches it and fires jets at distant hazards. A&rsquo;s white dwarf clears a ring first, then hunts. None of them ever touch you or your gas, and each wears a name tag while it lasts. Your star type never drops back once reached &mdash; releasing COMPRESS or taking a hit won&rsquo;t downgrade it.</li>
+              <li><span className="text-sky-200">SAVE STAR</span> keeps your current star ({BANK.minType} or bigger) for later instead of detonating it (your cloud starts again from M). Up to {BANK.slots} saved stars wait in the slots above the buttons — tap one to detonate it right there, remnant and all, any time you need a boost or a guard. Saved stars detonate at chain ×1. Reaching <span className="font-mono">O</span> pauses the game and asks: save it or detonate it (it detonates by itself after {BANK.oChoiceSec}s).</li>
               <li>Chain detonations within {COMBO_WINDOW_SEC}s to scale the boost up to ×{COMBO_STEPS[COMBO_STEPS.length - 1]}. Small stars (M, K, G) also grant a short shield.</li>
               <li><span className="text-rose-300">Red-ringed</span> stars, their planets, rogue stars and runaway stars cost a Hosky paw 🐾 (you blink and are safe for a few seconds after). You start with {START_LIVES}; lose them all and the run ends. Detonating a <span className="text-gold">B or O star</span> wins one paw back, up to {MAX_LIVES}.</li>
             </ul>
@@ -893,7 +958,7 @@ export function HoskyStarForm() {
                 Start
               </button>
             </div>
-            <p className="hidden text-[0.7rem] text-slate-muted sm:block">Desktop: mouse moves, click-hold compresses · arrows/WASD · Space compress · Enter detonate · P pause.</p>
+            <p className="hidden text-[0.7rem] text-slate-muted sm:block">Desktop: mouse moves, click-hold compresses · arrows/WASD · Space compress · Enter detonate · Q save star · 1/2 use a saved star · P pause.</p>
           </div>
         )}
 
@@ -904,7 +969,6 @@ export function HoskyStarForm() {
               type="button"
               data-testid="sf-resume"
               onClick={() => {
-                pausedRef.current = false;
                 setPaused(false);
                 if (!immersive) enterImmersive(); // resuming always goes back to full screen
               }}
@@ -912,6 +976,56 @@ export function HoskyStarForm() {
             >
               Resume
             </button>
+          </div>
+        )}
+
+        {phase === "playing" && oChoice && !paused && (
+          <div
+            className="absolute inset-0 z-30 flex items-center justify-center bg-navy/55 p-4 backdrop-blur-[1px]"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="sf-ochoice-title"
+            data-testid="sf-ochoice"
+          >
+            <div className="max-h-full w-full max-w-[340px] overflow-y-auto rounded-2xl border-2 border-sky-300/60 bg-[#06102a]/95 p-4 text-center [@media(max-height:420px)]:p-3 shadow-[0_0_48px_rgba(157,180,255,0.45)]">
+              <p className="card-label text-sky-200">Top of the ladder</p>
+              <h3 id="sf-ochoice-title" className="mt-1 text-xl font-bold text-white">
+                You made an <span className="font-mono" style={{ color: SPECTRAL.O.color }}>O</span> star!
+              </h3>
+              <p className="mt-1 text-xs leading-relaxed text-slate [@media(max-height:420px)]:hidden">
+                Nothing grows past O, so choose: detonate now (boost ×{fmt(SPECTRAL.O.boost * hud.chain)} + black hole), or save it and detonate it later when you need it.
+              </p>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  data-testid="sf-ochoice-save"
+                  disabled={hud.bank.length >= BANK.slots}
+                  onClick={() => resolveChoice("save")}
+                  className="touch-manipulation rounded-xl border-2 border-sky-300/70 bg-sky-300/10 px-2 py-3 text-sm font-bold uppercase tracking-wide text-sky-100 transition active:scale-[0.97] disabled:opacity-40"
+                >
+                  Save O
+                  <span className="mt-0.5 block text-[0.65rem] font-medium normal-case tracking-normal text-slate-muted">
+                    {hud.bank.length >= BANK.slots ? "bank full" : `slot ${hud.bank.length + 1} of ${BANK.slots}`}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  data-testid="sf-ochoice-detonate"
+                  onClick={() => resolveChoice("detonate")}
+                  className="touch-manipulation rounded-xl border-2 border-gold bg-gold/25 px-2 py-3 text-sm font-extrabold uppercase tracking-wide text-gold shadow-[0_0_24px_rgba(245,197,66,0.35)] transition active:scale-[0.97]"
+                >
+                  Detonate
+                  <span className="mt-0.5 block text-[0.65rem] font-medium normal-case tracking-normal text-slate-muted">now</span>
+                </button>
+              </div>
+              <div className="mt-3 h-1 w-full overflow-hidden rounded bg-white/10" aria-hidden>
+                <div className="h-full bg-gold transition-[width] duration-100 ease-linear" style={{ width: `${(oChoice.left / BANK.oChoiceSec) * 100}%` }} />
+              </div>
+              <p className="mt-1 text-[0.7rem] text-slate-muted" aria-live="polite">
+                Game paused · detonates by itself in {Math.ceil(oChoice.left)}s
+                <span className="hidden [@media(hover:hover)_and_(pointer:fine)]:inline"> · Q save · Enter detonate</span>
+              </p>
+            </div>
           </div>
         )}
 
@@ -944,7 +1058,7 @@ export function HoskyStarForm() {
                   <>Your best: <span className="whitespace-nowrap font-mono text-white">{formatDistance(best).text}</span></>
                 )}
                 <br />
-                {Math.round(summary.durationSec)}s · {summary.detonations.length} {summary.detonations.length === 1 ? "star" : "stars"} · {summary.kills} {summary.kills === 1 ? "hazard" : "hazards"}
+                {Math.round(summary.durationSec)}s · {starsMade} {starsMade === 1 ? "star" : "stars"} · {summary.kills} {summary.kills === 1 ? "hazard" : "hazards"}
               </div>
             </div>
             <p className="-mt-1 text-sm text-slate" data-testid="sf-beststar">
@@ -990,7 +1104,7 @@ export function HoskyStarForm() {
 
             <div className="rounded-xl border border-white/10 bg-black/30 p-3">
               <p className="card-label mb-2">Stars made</p>
-              {summary.detonations.length === 0 ? (
+              {starsMade === 0 ? (
                 <p className="text-xs text-slate-muted">No stars made — cruise speed only. Detonate a star for a speed boost next time.</p>
               ) : (
                 <table className="w-full text-sm">
@@ -1007,6 +1121,11 @@ export function HoskyStarForm() {
                     ))}
                   </tbody>
                 </table>
+              )}
+              {summary.unused.length > 0 && (
+                <p className="mt-1 text-xs text-slate-muted" data-testid="sf-unused">
+                  Saved but never used: <span className="font-mono">{summary.unused.join(", ")}</span> — deploy saved stars before your last paw goes.
+                </p>
               )}
               {summary.bestChain > 1 && (
                 <p className="mt-1 text-xs text-slate-muted">Best chain: ×{chainMultiplier(summary.bestChain - 1)} (scales the boost)</p>
@@ -1072,15 +1191,49 @@ export function HoskyStarForm() {
                 Full screen
               </button>
             )}
-            <button type="button" onClick={() => { pausedRef.current = !pausedRef.current; setPaused(pausedRef.current); }} className="rounded-full border border-white/15 px-3 py-1 text-slate hover:text-white">
+            <button type="button" onClick={() => setPaused(!userPausedRef.current)} className="rounded-full border border-white/15 px-3 py-1 text-slate hover:text-white">
               {paused ? "Resume" : "Pause"}
             </button>
           </span>
         )}
       </div>
 
+      {/* Saved stars: tap a slot to detonate that star right now */}
+      <div
+        className={`mt-2 flex items-center justify-center gap-2 ${immersive ? "mx-auto w-full max-w-[560px] [&_button]:pointer-events-auto [text-shadow:0_1px_3px_rgba(0,0,0,0.9)]" : ""}`}
+        data-testid="sf-bank"
+      >
+        <span className="card-label shrink-0 leading-none">Saved</span>
+        {Array.from({ length: BANK.slots }, (_, i) => {
+          const k = hud.bank[i];
+          return k ? (
+            <button
+              key={i}
+              type="button"
+              data-testid={`sf-slot-${i}`}
+              disabled={phase !== "playing" || !hud.canDeploy}
+              onPointerDown={(e) => {
+                e.preventDefault();
+                deployStar(i);
+              }}
+              onContextMenu={(e) => e.preventDefault()}
+              aria-label={`Detonate saved ${k} star`}
+              className="flex touch-none items-center gap-1.5 rounded-full border-2 bg-black/50 px-3 py-1 text-xs font-semibold text-white transition active:scale-[0.95] disabled:opacity-60"
+              style={{ borderColor: SPECTRAL[k].color, boxShadow: `0 0 14px ${SPECTRAL[k].glow}` }}
+            >
+              <span className="font-mono text-sm font-bold" style={{ color: SPECTRAL[k].color }}>{k}</span>
+              <span className="text-[0.65rem] font-medium text-slate">tap to detonate</span>
+            </button>
+          ) : (
+            <span key={i} data-testid={`sf-slot-${i}`} className="rounded-full border border-dashed border-white/20 bg-black/30 px-3 py-1 text-[0.65rem] text-slate-muted">
+              empty
+            </span>
+          );
+        })}
+      </div>
+
       {/* Controls */}
-      <div className={`mt-2 grid grid-cols-[1fr_1.5fr] gap-3 ${immersive ? "mx-auto w-full max-w-[560px] [@media(max-height:500px)]:max-w-[400px] [&_button]:pointer-events-auto [&_button]:backdrop-blur-[2px]" : ""}`}>
+      <div className={`mt-2 grid grid-cols-[1fr_0.95fr_1.3fr] gap-2 sm:gap-3 ${immersive ? "mx-auto w-full max-w-[560px] [@media(max-height:500px)]:max-w-[400px] [&_button]:pointer-events-auto [&_button]:backdrop-blur-[2px]" : ""}`}>
         <button
           type="button"
           data-testid="sf-compress"
@@ -1103,6 +1256,24 @@ export function HoskyStarForm() {
         </button>
         <button
           type="button"
+          data-testid="sf-save"
+          disabled={phase !== "playing"}
+          onPointerDown={(e) => {
+            e.preventDefault();
+            saveStar();
+          }}
+          onContextMenu={(e) => e.preventDefault()}
+          className={`touch-none rounded-2xl border px-2 ${immersive ? "py-3 [@media(max-height:500px)]:py-1.5" : "py-5"} text-sm font-bold uppercase tracking-wide transition active:scale-[0.97] disabled:opacity-40 ${
+            hud.canSave ? "border-sky-300/70 bg-sky-300/10 text-sky-100" : "border-white/20 bg-white/[0.05] text-slate"
+          }`}
+        >
+          Save star
+          <span className="mt-0.5 block text-[0.65rem] font-medium normal-case tracking-normal text-slate-muted [@media(max-height:500px)]:hidden">
+            {hud.bank.length >= BANK.slots ? "bank full" : hud.canSave ? `keep ${hud.type} · ${hud.bank.length}/${BANK.slots}` : `${BANK.minType} or bigger · ${hud.bank.length}/${BANK.slots}`}
+          </span>
+        </button>
+        <button
+          type="button"
           data-testid="sf-detonate"
           disabled={phase !== "playing"}
           onPointerDown={(e) => {
@@ -1110,7 +1281,7 @@ export function HoskyStarForm() {
             detonate();
           }}
           onContextMenu={(e) => e.preventDefault()}
-          className={`touch-none rounded-2xl border-2 px-3 ${immersive ? "py-3 [@media(max-height:500px)]:py-1.5" : "py-5"} text-lg font-extrabold uppercase tracking-wider transition active:scale-[0.97] disabled:opacity-40 ${
+          className={`touch-none rounded-2xl border-2 px-3 ${immersive ? "py-3 [@media(max-height:500px)]:py-1.5" : "py-5"} text-base font-extrabold uppercase tracking-wide transition active:scale-[0.97] disabled:opacity-40 sm:text-lg sm:tracking-wider ${
             hud.canDet
               ? "border-gold bg-gold/25 text-gold shadow-[0_0_28px_rgba(245,197,66,0.4)]"
               : "border-white/20 bg-white/[0.05] text-slate"

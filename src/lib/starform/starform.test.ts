@@ -698,3 +698,163 @@ describe("screen-shaped arena", () => {
     expect(g.W / g.H).toBeLessThanOrEqual(2.6 + 1e-9);
   });
 });
+
+describe("save star (bank)", () => {
+  /** Park a cloud with enough packed mass to rank as `type`. */
+  const loaded = (seed: number, mass: number) => {
+    const g = new StarForm(seed);
+    g.obstacles.length = 0;
+    g.cloud.invuln = 1e9;
+    g.cloud.mass = mass;
+    g.cloud.comp = 1;
+    return g;
+  };
+  const tick = (g: StarForm, sec: number) => {
+    for (let i = 0; i < Math.round(sec / STEP); i++) {
+      g.obstacles.length = 0;
+      g.step();
+      g.drain();
+    }
+  };
+
+  test("saving banks the star, resets the cloud and gives no boost or remnant", () => {
+    const g = loaded(5, 60);
+    expect(g.currentType()).toBe("O");
+    const before = g.cloudSerial;
+    const d = g.saveStar();
+    expect(d?.b).toBe(1);
+    expect(g.bank).toEqual(["O"]);
+    expect(g.cloud.mass).toBe(0);
+    expect(g.currentType()).toBe("M");
+    expect(g.cloudSerial).toBe(before + 1);
+    expect(g.remnants.length).toBe(0);
+    expect(g.speedNow()).toBeCloseTo(1, 6); // no boost yet
+    expect(g.chain).toBe(-1); // the chain is untouched
+  });
+
+  test("an M star can't be saved (not worth a slot) — the cloud is kept", () => {
+    const g = loaded(4, 1.2);
+    expect(g.currentType()).toBe("M");
+    expect(g.canDetonate()).toBe(true);
+    expect(g.canSave()).toBe(false);
+    expect(g.saveStar()).toBeNull();
+    expect(g.cloud.mass).toBe(1.2);
+    expect(g.drain().some((e) => e.e === "saveSmall")).toBe(true);
+  });
+
+  test("the bank holds BANK.slots stars and respects the cooldown", () => {
+    const g = loaded(6, 60);
+    expect(g.saveStar()).not.toBeNull();
+    g.cloud.mass = 60;
+    g.cloud.comp = 1;
+    expect(g.saveStar()).toBeNull(); // cooldown
+    tick(g, 0.5);
+    g.cloud.mass = 60;
+    g.cloud.comp = 1;
+    expect(g.saveStar()).not.toBeNull();
+    tick(g, 0.5);
+    g.cloud.mass = 60;
+    g.cloud.comp = 1;
+    expect(g.canSave()).toBe(false);
+    expect(g.saveStar()).toBeNull(); // bank full: can't hoard O stars
+    expect(g.bank.length).toBe(2);
+    expect(g.canDetonate()).toBe(true); // detonating still works
+  });
+
+  test("deploying detonates the saved star at chain ×1: boost, remnant, paw — cloud kept", () => {
+    const g = loaded(7, 60);
+    g.saveStar();
+    tick(g, 0.5);
+    g.cloud.mass = 9;
+    g.lives = 3;
+    const chainBefore = g.chain;
+    const d = g.deployStar(0);
+    expect(d).toMatchObject({ k: "O", m: 0, b: 2 });
+    expect(g.bank).toEqual([]);
+    expect(g.cloud.mass).toBe(9); // the growing cloud is not spent
+    expect(g.remnants.some((r) => r.type === "O")).toBe(true);
+    expect(g.lives).toBe(4); // O wins a paw back
+    expect(g.chain).toBe(chainBefore);
+    expect(g.speedNow()).toBeGreaterThan(1.5);
+    expect(g.deployStar(0)).toBeNull(); // nothing left
+  });
+
+  test("a run with saves and deploys verifies and matches the live distance", () => {
+    const g = new StarForm(31);
+    let saved = 0;
+    let deployed = 0;
+    while (!g.ended && g.t < 200) {
+      const c = g.cloud;
+      let best: { x: number; y: number } | null = null;
+      let bd = Infinity;
+      for (const s of g.gas) {
+        const dd = Math.hypot(s.x - c.x, s.y - c.y);
+        if (dd < bd) {
+          bd = dd;
+          best = s;
+        }
+      }
+      if (best) {
+        g.input.tx = best.x;
+        g.input.ty = best.y;
+      }
+      g.input.compress = true;
+      // save every G-or-better, deploy whenever the bank is full
+      if (g.bank.length >= 2 && g.detCooldown <= 0) {
+        if (g.deployStar(0)) deployed++;
+      } else if (SPECTRAL_ORDER.indexOf(g.currentType()) <= SPECTRAL_ORDER.indexOf("G") && g.canSave()) {
+        if (g.saveStar()) saved++;
+      }
+      g.step();
+      g.drain();
+    }
+    expect(saved).toBeGreaterThan(2);
+    expect(deployed).toBeGreaterThan(0);
+    const sum = g.summary();
+    expect(sum.detonations.some((d) => d.b === 1)).toBe(true);
+    const parsed = parseRun({ name: "Bot", runId: "ABCDEFGH23", steps: sum.steps, detonations: sum.detonations });
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) {
+      const v = verifyRun(parsed.run);
+      expect(v.ok).toBe(true);
+      if (v.ok) expect(v.distance).toBeCloseTo(sum.distance, 2);
+    }
+    // saved-but-unused stars are reported and not counted as made
+    const made = SPECTRAL_ORDER.reduce((n, k) => n + sum.counts[k], 0);
+    expect(made).toBe(sum.detonations.filter((d) => d.b !== 1).length);
+    expect(sum.unused.length).toBe(saved - deployed);
+  });
+
+  test("server rejects bank cheats", () => {
+    const steps = 6000;
+    const run = (detonations: RunDet[]) => verifyRun({ name: "Pup", runId: "ABCDEFGH23", steps, detonations });
+    const err = (dets: RunDet[]) => (run(dets) as { error?: string }).error;
+    // honest: save a G, deploy it later
+    expect(run([{ k: "G", m: 0, s: 1500, b: 1 }, { k: "G", m: 0, s: 1800, b: 2 }]).ok).toBe(true);
+    // deploy with nothing saved / wrong type
+    expect(err([{ k: "O", m: 0, s: 1500, b: 2 }])).toBe("bad_bank");
+    expect(err([{ k: "G", m: 0, s: 1500, b: 1 }, { k: "O", m: 0, s: 1800, b: 2 }])).toBe("bad_bank");
+    // deploy the same saved star twice
+    expect(err([{ k: "G", m: 0, s: 1500, b: 1 }, { k: "G", m: 0, s: 1800, b: 2 }, { k: "G", m: 0, s: 2100, b: 2 }])).toBe("bad_bank");
+    // more than BANK.slots saved at once
+    expect(err([{ k: "K", m: 0, s: 900, b: 1 }, { k: "K", m: 0, s: 1000, b: 1 }, { k: "K", m: 0, s: 1100, b: 1 }])).toBe("bad_bank");
+    // an M isn't worth a slot (the game never sends one)
+    expect(err([{ k: "M", m: 0, s: 600, b: 1 }])).toBe("bad_bank");
+    // a saved / deployed star can't carry a chain multiplier
+    expect(err([{ k: "G", m: 0, s: 1500, b: 1 }, { k: "G", m: 1, s: 1530, b: 2 }])).toBe("bad_chain");
+    // saves still obey the cooldown and the gas supply
+    expect(err([{ k: "G", m: 0, s: 1500, b: 1 }, { k: "G", m: 0, s: 1505, b: 2 }])).toBe("bad_timing");
+    expect(err([{ k: "O", m: 0, s: 60, b: 1 }])).toBe("impossible_mass");
+    // a deploy doesn't break the chain of real detonations around it
+    expect(run([{ k: "G", m: 0, s: 1500, b: 1 }, { k: "G", m: 0, s: 2000 }, { k: "G", m: 0, s: 2040, b: 2 }, { k: "G", m: 1, s: 2100 }]).ok).toBe(true);
+    // junk flag
+    expect(parseRun({ name: "x", runId: "ABCDEFGH23", steps: 3000, detonations: [{ k: "G", m: 0, s: 1500, b: 3 }] }).ok).toBe(false);
+  });
+
+  test("saved stars give no distance until deployed", () => {
+    const save = [{ k: "O" as const, m: 0, s: 600, b: 1 as const }];
+    expect(simulateDistance(3000, save)).toBeCloseTo(simulateDistance(3000, []), 6);
+    const both = [...save, { k: "O" as const, m: 0, s: 1200, b: 2 as const }];
+    expect(simulateDistance(3000, both)).toBeCloseTo(simulateDistance(3000, [{ k: "O", m: 0, s: 1200 }]), 6);
+  });
+});

@@ -44,12 +44,13 @@ export class DistanceTracker {
 }
 
 /** Server-side: rebuild a run's distance from its detonation steps. */
-export function simulateDistance(steps: number, dets: ReadonlyArray<{ k: SpectralId; m: number; s: number }>): number {
+export function simulateDistance(steps: number, dets: ReadonlyArray<{ k: SpectralId; m: number; s: number; b?: number }>): number {
   const tr = new DistanceTracker();
   let di = 0;
   for (let i = 0; i < steps; i++) {
     while (di < dets.length && dets[di].s === i) {
-      tr.add(dets[di].k, dets[di].m);
+      // a saved star (b = 1) gives no boost until it is deployed (b = 2, at chain ×1)
+      if (dets[di].b !== 1) tr.add(dets[di].k, dets[di].b === 2 ? 0 : dets[di].m);
       di++;
     }
     tr.step();

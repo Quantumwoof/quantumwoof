@@ -60,6 +60,20 @@ export const CLOUD = {
 
 export const DETONATE_MIN_EFF_MASS = 1.5;
 export const DETONATE_COOLDOWN_SEC = 0.35;
+/**
+ * Saved stars. SAVE STAR banks the cloud's current star instead of detonating it (the cloud
+ * starts again from M); tapping a slot later detonates that star there and then, with its boost,
+ * blast and remnant. Fair by design: only BANK.slots stars at once, a saved star detonates at
+ * chain ×1 (it can't be stacked into a combo) and every save/deploy obeys the detonate cooldown,
+ * so banking never earns more than detonating each star when it was made.
+ */
+export const BANK = {
+  slots: 2,
+  /** Smallest star worth a slot (an M leaves no remnant and barely boosts). */
+  minType: "K" as SpectralId,
+  /** Seconds the "you made an O" choice waits before detonating by default. */
+  oChoiceSec: 4,
+} as const;
 /** Every detonation also pops a small free blast (radius = base + perRank·rank). */
 export const BLAST = { base: 55, perRank: 9 } as const;
 

@@ -2,7 +2,7 @@
  * Canvas rendering + particle effects for Hosky Star Form.
  * Reads engine state, never mutates it (only its own `Fx` state).
  */
-import { HIT_INVULN_SEC, OBSTACLE, OBSTACLE_STARS, REMNANT, SPECTRAL, WORLD_H, WORLD_W, type SpectralId } from "@/lib/starform/config";
+import { BANK, HIT_INVULN_SEC, OBSTACLE, OBSTACLE_STARS, REMNANT, SPECTRAL, WORLD_H, WORLD_W, type SpectralId } from "@/lib/starform/config";
 import { STAR_TEACH } from "@/content/starForm";
 import { partsOf, type GameEvent, type Obstacle, type Remnant, type StarForm } from "@/lib/starform/engine";
 
@@ -258,6 +258,17 @@ export function applyEvents(fx: Fx, events: GameEvent[]) {
         }
         break;
       }
+      case "save": {
+        // the star is pulled into the bank: an inward ring + a short tag
+        const c = SPECTRAL[ev.type].color;
+        fx.rings.push({ x: ev.x, y: ev.y, r: 90, max: 6, life: 0.45, maxLife: 0.45, color: c, width: 3 });
+        burst(fx, ev.x, ev.y, c, 18, 120, 0.5, 2.2);
+        fx.floaters.push({ x: ev.x, y: ev.y - 30, text: `${ev.type} saved`, color: c, life: 1.4, big: false });
+        break;
+      }
+      case "saveSmall":
+        toast(fx, `Grow to ${BANK.minType} or bigger to save a star`, 1.3);
+        break;
       case "fizzle":
         toast(fx, "Too small — gather more gas first", 1.2);
         burst(fx, ev.x, ev.y, "#8aa0b8", 6, 60, 0.4, 1.6);
@@ -543,8 +554,11 @@ function drawRemnantLabels(ctx: CanvasRenderingContext2D, g: StarForm, top: numb
     // stay clear of the HUD (top) and the floating buttons (bottom)
     const x = Math.max(70, Math.min(g.W - 70, r.x));
     let y = Math.max(top + 30, Math.min(bottom - 10, r.y + labelOffset(r)));
-    for (let i = 0; i < 4; i++) {
-      if (placed.some((p) => Math.abs(p.x - x) < 150 && Math.abs(p.y - y) < 28)) y = Math.min(bottom - 10, y + 28);
+    // nudge down past any tag already placed here; near the buttons, nudge up instead
+    const clash = (yy: number) => placed.some((p) => Math.abs(p.x - x) < 150 && Math.abs(p.y - yy) < 28);
+    for (let i = 0; i < 6 && clash(y); i++) {
+      const down = Math.min(bottom - 10, y + 28);
+      y = down !== y && !clash(down) ? down : Math.max(top + 30, y - 28);
     }
     placed.push({ x, y });
     ctx.globalAlpha = a;
@@ -990,8 +1004,11 @@ export function draw(ctx: CanvasRenderingContext2D, g: StarForm, fx: Fx, o: Draw
     ctx.textAlign = "center";
     ctx.strokeStyle = "rgba(2,6,23,0.8)";
     ctx.lineWidth = 5;
-    ctx.strokeText(f.text, f.x, f.y);
-    ctx.fillText(f.text, f.x, f.y);
+    // keep the whole tag on screen when the star went off near an edge
+    const half = ctx.measureText(f.text).width / 2 + 8;
+    const fxX = Math.max(half, Math.min(W - half, f.x));
+    ctx.strokeText(f.text, fxX, f.y);
+    ctx.fillText(f.text, fxX, f.y);
   }
   ctx.globalAlpha = 1;
 

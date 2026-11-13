@@ -7,6 +7,7 @@
  */
 import { DistanceTracker } from "./distance";
 import {
+  BANK,
   BLAST,
   CLOUD,
   COMBO_STEPS,
@@ -100,7 +101,11 @@ export type Remnant = {
 /** A homing jet fired by a black hole at a distant hazard. */
 export type Shot = { id: number; rid: number; x: number; y: number; vx: number; vy: number; tid: number; life: number; trail: number };
 
-export type Detonation = { k: SpectralId; m: number; t: number; /** engine step count at detonation */ s: number };
+/**
+ * One star action. `b` is absent for a normal detonation, 1 for SAVE STAR (banked: no boost yet)
+ * and 2 for deploying a saved star (boost at chain ×1, chain untouched).
+ */
+export type Detonation = { k: SpectralId; m: number; t: number; /** engine step count at detonation */ s: number; b?: 1 | 2 };
 
 export type GameEvent =
   | { e: "gas"; x: number; y: number }
@@ -110,6 +115,8 @@ export type GameEvent =
   | { e: "jet"; x: number; y: number }
   | { e: "detonate"; x: number; y: number; type: SpectralId; boost: number; mult: number; blast: number }
   | { e: "fizzle"; x: number; y: number }
+  | { e: "save"; x: number; y: number; type: SpectralId }
+  | { e: "saveSmall"; x: number; y: number }
   | { e: "remnantEnd"; x: number; y: number; type: SpectralId }
   | { e: "warn"; x: number; y: number }
   | { e: "over" };
@@ -190,6 +197,10 @@ export class StarForm {
   lastLost = 0;
   /** Time of the last gas wisp swallowed (the cloud only leaks when starving). */
   lastGasT = 0;
+  /** Saved stars, oldest first (at most BANK.slots). */
+  bank: SpectralId[] = [];
+  /** Bumps every time a fresh cloud starts (detonate / save) — lets the UI offer the O choice once per cloud. */
+  cloudSerial = 0;
 
   private rngSpawn: Rng;
   private rngGas: Rng;
@@ -405,14 +416,62 @@ export class StarForm {
     }
     c.peakEff = Math.max(c.peakEff, this.effMass());
     const type = this.currentType();
-    const spec = SPECTRAL[type];
     const idx = this.nextChainIndex();
-    const mult = chainMultiplier(idx);
     const det: Detonation = { k: type, m: idx, t: Math.round(this.t * 100) / 100, s: this.steps };
-    this.tracker.add(type, idx);
-    this.detonations.push(det);
     this.chain = idx;
     this.lastDetT = this.t;
+    this.explode(type, idx, det);
+    this.resetCloud(SPECTRAL[type].shieldSec);
+    return det;
+  }
+
+  /** Room left to bank another star right now. */
+  canSave() {
+    return this.canDetonate() && this.bank.length < BANK.slots && this.saveWorthy();
+  }
+  /** The cloud ranks at least BANK.minType (K) — smaller stars aren't worth a slot. */
+  saveWorthy() {
+    return SPECTRAL_ORDER.indexOf(this.currentType()) <= SPECTRAL_ORDER.indexOf(BANK.minType);
+  }
+  /** SAVE STAR: bank the cloud's current star for later; the cloud starts again from M. */
+  saveStar(): Detonation | null {
+    const c = this.cloud;
+    if (this.ended || this.detCooldown > 0 || this.bank.length >= BANK.slots) return null;
+    c.peakEff = Math.max(c.peakEff, this.effMass());
+    if (this.effMass() < DETONATE_MIN_EFF_MASS || !this.saveWorthy()) {
+      this.events.push({ e: "saveSmall", x: c.x, y: c.y });
+      return null;
+    }
+    const type = this.currentType();
+    const det: Detonation = { k: type, m: 0, t: Math.round(this.t * 100) / 100, s: this.steps, b: 1 };
+    this.bank.push(type);
+    this.detonations.push(det);
+    this.detCooldown = DETONATE_COOLDOWN_SEC;
+    this.events.push({ e: "save", x: c.x, y: c.y, type });
+    this.resetCloud(0);
+    return det;
+  }
+  /**
+   * Deploy saved star `slot`: it detonates at the cloud right now (boost at chain ×1, blast,
+   * remnant, paw back for B/O). The growing cloud is untouched and the chain isn't changed.
+   */
+  deployStar(slot = 0): Detonation | null {
+    if (this.ended || this.detCooldown > 0 || slot < 0 || slot >= this.bank.length) return null;
+    const type = this.bank.splice(slot, 1)[0];
+    const det: Detonation = { k: type, m: 0, t: Math.round(this.t * 100) / 100, s: this.steps, b: 2 };
+    this.explode(type, 0, det);
+    const c = this.cloud;
+    c.invuln = Math.max(c.invuln, SPECTRAL[type].shieldSec);
+    return det;
+  }
+
+  /** Boost + blast + remnant + paw for one star of `type` at the cloud's position. */
+  private explode(type: SpectralId, idx: number, det: Detonation) {
+    const c = this.cloud;
+    const spec = SPECTRAL[type];
+    const mult = chainMultiplier(idx);
+    this.tracker.add(type, idx);
+    this.detonations.push(det);
     this.detCooldown = DETONATE_COOLDOWN_SEC;
 
     const rank = SPECTRAL_ORDER.length - 1 - SPECTRAL_ORDER.indexOf(type);
@@ -455,12 +514,16 @@ export class StarForm {
       this.lives++;
       this.events.push({ e: "paw", x: c.x, y: c.y });
     }
-    // New cloud right away, same place; small-star niche = brief shield.
+  }
+
+  /** New cloud right away, same place (detonate / save); small stars give a brief shield. */
+  private resetCloud(shieldSec: number) {
+    const c = this.cloud;
     c.mass = 0;
     c.comp = 0;
     c.peakEff = 0; // a fresh cloud starts again from M
-    c.invuln = Math.max(c.invuln, spec.shieldSec, NEW_CLOUD_GRACE_SEC);
-    return det;
+    c.invuln = Math.max(c.invuln, shieldSec, NEW_CLOUD_GRACE_SEC);
+    this.cloudSerial++;
   }
 
   // ------------------------------------------------------------ step
@@ -879,12 +942,14 @@ export class StarForm {
 
   summary() {
     const counts: Record<SpectralId, number> = { O: 0, B: 0, A: 0, F: 0, G: 0, K: 0, M: 0 };
-    for (const d of this.detonations) counts[d.k]++;
+    for (const d of this.detonations) if (d.b !== 1) counts[d.k]++; // saved-but-never-used stars don't count
     return {
       distance: this.tracker.dist,
       steps: this.steps,
       durationSec: Math.round(this.t * 100) / 100,
-      detonations: this.detonations.map((d) => ({ k: d.k, m: d.m, s: d.s })),
+      detonations: this.detonations.map((d) => (d.b ? { k: d.k, m: d.m, s: d.s, b: d.b } : { k: d.k, m: d.m, s: d.s })),
+      /** Stars still in the bank when the run ended (made, never used). */
+      unused: [...this.bank],
       counts,
       kills: this.kills,
       bestChain: this.detonations.reduce((m, d) => Math.max(m, d.m), -1) + 1,

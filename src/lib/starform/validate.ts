@@ -4,9 +4,12 @@
  * submitted stars and timings with the same code the game uses, and rejects
  * impossible runs: absurd lengths, detonations faster than the cooldown, chain
  * multipliers that don't follow the timing, or more star mass than the gas
- * supply could have delivered by that moment.
+ * supply could have delivered by that moment. Saved stars (b = 1) must be paid
+ * for with gas like any star and fit in the bank; a deployed star (b = 2) must
+ * come out of the bank, detonates at chain ×1 and leaves the chain alone.
  */
 import {
+  BANK,
   CLOUD,
   COMBO_STEPS,
   COMBO_WINDOW_SEC,
@@ -22,7 +25,8 @@ import {
 } from "./config";
 import { simulateDistance } from "./distance";
 
-export type RunDet = { k: SpectralId; m: number; s: number };
+/** `b`: absent = detonation, 1 = saved to the bank, 2 = deployed from the bank. */
+export type RunDet = { k: SpectralId; m: number; s: number; b?: 1 | 2 };
 
 export type RunSubmission = {
   name: string;
@@ -60,8 +64,9 @@ export function parseRun(body: unknown): ParsedRun {
   }
   const detonations: RunDet[] = [];
   for (const d of b.detonations) {
-    const o = d as { k?: unknown; m?: unknown; s?: unknown };
+    const o = d as { k?: unknown; m?: unknown; s?: unknown; b?: unknown };
     if (
+      (o?.b !== undefined && o.b !== 1 && o.b !== 2) ||
       !isKind(o?.k) ||
       !Number.isInteger(o?.m) ||
       (o.m as number) < 0 ||
@@ -71,7 +76,9 @@ export function parseRun(body: unknown): ParsedRun {
     ) {
       return { ok: false, error: "bad_detonation" };
     }
-    detonations.push({ k: o.k, m: o.m as number, s: o.s as number });
+    const det: RunDet = { k: o.k, m: o.m as number, s: o.s as number };
+    if (o.b === 1 || o.b === 2) det.b = o.b;
+    detonations.push(det);
   }
   const name = sanitizeName(b.name);
   if (!name) return { ok: false, error: "bad_name" };
@@ -89,13 +96,28 @@ export function verifyRun(run: RunSubmission): Verdict {
   const maxSteps = Math.round(LB.maxDurationSec / STEP);
   if (run.steps < minSteps || run.steps > maxSteps) return { ok: false, error: "bad_duration" };
 
-  let prev: RunDet | null = null;
+  let prevAny: RunDet | null = null; // every action shares the cooldown
+  let prev: RunDet | null = null; // last real detonation — the chain only follows these
   let needed = 0;
+  const bank: SpectralId[] = [];
   for (const d of run.detonations) {
     if (d.s >= run.steps) return { ok: false, error: "bad_timing" };
-    if (prev) {
+    if (prevAny && d.s - prevAny.s < COOLDOWN_STEPS) return { ok: false, error: "bad_timing" };
+    prevAny = d;
+    if (d.b === 1 || d.b === 2) {
+      if (d.m !== 0) return { ok: false, error: "bad_chain" };
+      if (d.b === 2) {
+        // Deploy: must use a star that was saved earlier; its gas was already counted.
+        const i = bank.indexOf(d.k);
+        if (i < 0) return { ok: false, error: "bad_bank" };
+        bank.splice(i, 1);
+        continue;
+      }
+      if (bank.length >= BANK.slots) return { ok: false, error: "bad_bank" };
+      if (SPECTRAL_ORDER.indexOf(d.k) > SPECTRAL_ORDER.indexOf(BANK.minType)) return { ok: false, error: "bad_bank" };
+      bank.push(d.k);
+    } else if (prev) {
       const gap = d.s - prev.s;
-      if (gap < COOLDOWN_STEPS) return { ok: false, error: "bad_timing" };
       // Chain index must follow the timing (a couple of steps of slack at the window edge).
       const rise = Math.min(prev.m + 1, COMBO_STEPS.length - 1);
       const mustChain = gap <= WINDOW_STEPS - 2;
@@ -111,7 +133,7 @@ export function verifyRun(run: RunSubmission): Verdict {
     const t = d.s * STEP;
     const supplied = (GAS.startOnField + GAS.spawnPerSec * t) * GAS.mass + CLOUD.passiveMassPerSec * t + 1;
     if (needed > supplied) return { ok: false, error: "impossible_mass" };
-    prev = d;
+    if (!d.b) prev = d;
   }
 
   const distance = simulateDistance(run.steps, run.detonations);
