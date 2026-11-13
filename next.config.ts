@@ -70,6 +70,18 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   // next-pwa injects webpack; keep turbopack key so Next 16 stays quiet in dev.
   turbopack: {},
+  // Star Form is the only Woof game now: the old /play hub (Constellation Connect, Fetch the
+  // Photon) and any game slugs people may have shared land on it instead of a 404.
+  async redirects() {
+    return [
+      { source: "/play", destination: "/play/star-form", permanent: false },
+      ...["constellation", "constellation-connect", "photon", "fetch-the-photon", "fetch-photon"].map((slug) => ({
+        source: `/play/${slug}`,
+        destination: "/play/star-form",
+        permanent: true,
+      })),
+    ];
+  },
   async headers() {
     return [
       {

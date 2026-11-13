@@ -44,7 +44,7 @@ export function Header() {
           Notes
         </Link>
         <Link
-          href="/play"
+          href="/play/star-form"
           className="rounded-full px-3 py-1.5 transition hover:bg-white/5 hover:text-white"
         >
           Play

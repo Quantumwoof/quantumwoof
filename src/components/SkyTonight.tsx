@@ -98,13 +98,13 @@ export function SkyTonight() {
               ))}
             </ul>
 
-            <p className="text-xs text-slate-muted">Same names → Play · Constellation Connect</p>
+            <p className="text-xs text-slate-muted">Up there tonight → see how stars like these form</p>
 
             <Link
-              href="/play#constellation"
+              href="/play/star-form"
               className="inline-flex w-full items-center justify-center rounded-full bg-lavender px-5 py-3 text-sm font-semibold text-navy transition hover:bg-lavender-soft sm:w-auto"
             >
-              Play tonight&apos;s sky
+              Play Hosky Star Form
             </Link>
           </>
         )}

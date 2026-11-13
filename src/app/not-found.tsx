@@ -35,7 +35,7 @@ export default function NotFound() {
           School
         </Link>
         <Link
-          href="/play"
+          href="/play/star-form"
           className="rounded-full px-4 py-2 text-sm text-slate ring-1 ring-white/15 transition hover:bg-white/5 hover:text-white"
         >
           Play

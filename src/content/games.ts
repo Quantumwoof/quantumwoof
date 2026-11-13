@@ -210,8 +210,3 @@ export function stylizedFieldStars(seed: string): { x: number; y: number; r: num
   return out;
 }
 
-export const photonTips = [
-  "Photons do not hurry for applause. Catch what you can; note what you miss.",
-  "Timing is a measurement. The universe keeps the stopwatch.",
-  "A good catch is data. A miss is also data — quieter, but useful.",
-];

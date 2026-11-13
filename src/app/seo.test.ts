@@ -19,7 +19,8 @@ describe("SEO routes", () => {
     for (const u of urls) expect(u.startsWith("https://www.quantumwoof.io/")).toBe(true);
     expect(urls).toContain("https://www.quantumwoof.io/");
     expect(urls).toContain("https://www.quantumwoof.io/school");
-    expect(urls).toContain("https://www.quantumwoof.io/play");
+    expect(urls).toContain("https://www.quantumwoof.io/play/star-form");
+    expect(urls).not.toContain("https://www.quantumwoof.io/play");
     expect(urls).toContain("https://www.quantumwoof.io/privacy");
     for (const t of schoolTopics) {
       expect(urls.includes(`https://www.quantumwoof.io/school/${t.slug}`)).toBe(t.status === "ready");
