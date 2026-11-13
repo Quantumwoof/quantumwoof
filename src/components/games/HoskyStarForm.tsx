@@ -19,7 +19,7 @@ import {
 import { useHydrated } from "@/hooks/useHydrated";
 import { formatDistance } from "@/lib/starform/distance";
 import { StarForm, chainMultiplier } from "@/lib/starform/engine";
-import { applyEvents, createFx, draw, stepFx, type Fx } from "./starFormRender";
+import { applyEvents, createFx, draw, fitView, stepFx, type Fx } from "./starFormRender";
 
 type Phase = "intro" | "playing" | "over";
 type TopRow = { name: string; distance: number; at: string };
@@ -116,8 +116,20 @@ function TopBoard({ top, available, highlightDistance }: { top: TopRow[]; availa
   );
 }
 
+type FsDoc = Document & { webkitFullscreenElement?: Element | null; webkitExitFullscreen?: () => Promise<void> | void };
+type FsEl = HTMLElement & { webkitRequestFullscreen?: () => Promise<void> | void };
+const fsElement = () => {
+  const d = document as FsDoc;
+  return d.fullscreenElement ?? d.webkitFullscreenElement ?? null;
+};
+
 export function HoskyStarForm() {
   const wrapRef = useRef<HTMLDivElement>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
+  /** Immersive play: the game covers the whole viewport (CSS overlay, plus real fullscreen where allowed). */
+  const [immersive, setImmersive] = useState(false);
+  const fsUsedRef = useRef(false);
+  const exitImmersiveRef = useRef<() => void>(() => {});
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const gameRef = useRef<StarForm | null>(null);
   const fxRef = useRef<Fx | null>(null);
@@ -184,7 +196,7 @@ export function HoskyStarForm() {
     const fit = () => {
       const dpr = Math.min(2, window.devicePixelRatio || 1);
       const width = wrap.clientWidth;
-      const height = (width * WORLD_H) / WORLD_W;
+      const height = wrap.clientHeight || (width * WORLD_H) / WORLD_W;
       sizeRef.current = { width, height, dpr };
       canvas.width = Math.round(width * dpr);
       canvas.height = Math.round(height * dpr);
@@ -241,6 +253,7 @@ export function HoskyStarForm() {
       setPost("idle");
       setPostMsg("");
       setPhase("over");
+      exitImmersiveRef.current();
       loadBoard();
     },
     [loadBoard],
@@ -277,7 +290,77 @@ export function HoskyStarForm() {
     return () => sw.removeEventListener("controllerchange", onChange);
   }, []);
 
+  // ---- immersive full-viewport mode
+  const enterImmersive = useCallback(() => {
+    setImmersive(true);
+    // Real fullscreen where the browser allows it (needs this click/tap); iOS Safari has no
+    // element fullscreen, so the fixed full-viewport overlay alone does the job there.
+    const el = stageRef.current as FsEl | null;
+    if (!el || fsElement()) return;
+    try {
+      const req = el.requestFullscreen ? () => el.requestFullscreen({ navigationUI: "hide" }) : el.webkitRequestFullscreen?.bind(el);
+      const r = req?.();
+      if (r && typeof (r as Promise<void>).catch === "function") (r as Promise<void>).catch(() => {});
+    } catch {
+      /* overlay only */
+    }
+  }, []);
+  const exitImmersive = useCallback(() => {
+    setImmersive(false);
+    fsUsedRef.current = false;
+    const d = document as FsDoc;
+    if (!fsElement()) return;
+    try {
+      const r = d.exitFullscreen ? d.exitFullscreen() : d.webkitExitFullscreen?.();
+      if (r && typeof (r as Promise<void>).catch === "function") (r as Promise<void>).catch(() => {});
+    } catch {
+      /* ignore */
+    }
+  }, []);
+  const leaveFullView = useCallback(() => {
+    if (phaseRef.current === "playing") {
+      pausedRef.current = true;
+      setPaused(true);
+    }
+    exitImmersive();
+  }, [exitImmersive]);
+  // Esc / the browser's own "exit full screen": leave immersive mode and pause the run.
+  useEffect(() => {
+    const onFs = () => {
+      if (fsElement()) {
+        fsUsedRef.current = true;
+      } else if (fsUsedRef.current) {
+        leaveFullView();
+      }
+    };
+    document.addEventListener("fullscreenchange", onFs);
+    document.addEventListener("webkitfullscreenchange", onFs);
+    return () => {
+      document.removeEventListener("fullscreenchange", onFs);
+      document.removeEventListener("webkitfullscreenchange", onFs);
+    };
+  }, [leaveFullView]);
+  // Run over: drop back to the page so the result, leaderboard and star guide read normally.
+  useEffect(() => {
+    exitImmersiveRef.current = exitImmersive;
+  }, [exitImmersive]);
+  // No page scroll, pull-to-refresh or overscroll bounce behind the game while immersive.
+  useEffect(() => {
+    if (!immersive) return;
+    const html = document.documentElement;
+    const body = document.body;
+    const prev = [html.style.overflow, body.style.overflow, html.style.overscrollBehavior, body.style.overscrollBehavior];
+    html.style.overflow = "hidden";
+    body.style.overflow = "hidden";
+    html.style.overscrollBehavior = "none";
+    body.style.overscrollBehavior = "none";
+    return () => {
+      [html.style.overflow, body.style.overflow, html.style.overscrollBehavior, body.style.overscrollBehavior] = prev;
+    };
+  }, [immersive]);
+
   const start = useCallback(() => {
+    enterImmersive();
     const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
     gameRef.current = new StarForm(randomSeed());
     // Dev/test hook only (never set in production builds).
@@ -295,6 +378,15 @@ export function HoskyStarForm() {
         obstacles: gg.obstacles.filter((o) => o.warn <= 0).map((o) => ({ x: o.x, y: o.y })),
         kills: gg.kills,
         shots: gg.shots.length,
+        view: (() => {
+          const c = canvasRef.current;
+          if (!c) return null;
+          const rect = c.getBoundingClientRect();
+          const v = fitView(rect.width, rect.height);
+          return { left: rect.left + v.ox, top: rect.top + v.oy, scale: v.scale, canvasW: rect.width, canvasH: rect.height };
+        })(),
+        immersive: !!document.querySelector('[data-sf-immersive="1"]'),
+        fullscreen: !!fsElement(),
       });
     }
     fxRef.current = createFx(reduced);
@@ -316,7 +408,7 @@ export function HoskyStarForm() {
         }
       })
       .catch(() => {});
-  }, [setCompress]);
+  }, [setCompress, enterImmersive]);
 
   // ---- game loop
   useEffect(() => {
@@ -455,9 +547,10 @@ export function HoskyStarForm() {
   };
   const toWorld = (clientX: number, clientY: number) => {
     const rect = canvasRef.current!.getBoundingClientRect();
+    const v = fitView(rect.width, rect.height);
     return {
-      x: ((clientX - rect.left) / rect.width) * WORLD_W,
-      y: ((clientY - rect.top) / rect.height) * WORLD_H,
+      x: (clientX - rect.left - v.ox) / v.scale,
+      y: (clientY - rect.top - v.oy) / v.scale,
     };
   };
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -469,8 +562,8 @@ export function HoskyStarForm() {
     pointer.current = { id: e.pointerId, x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, at: performance.now(), onCloud };
     if (e.pointerType === "mouse") {
       const w = toWorld(e.clientX, e.clientY);
-      g.input.tx = w.x;
-      g.input.ty = w.y;
+      g.input.tx = Math.max(0, Math.min(WORLD_W, w.x));
+      g.input.ty = Math.max(0, Math.min(WORLD_H, w.y));
       compressRef.current.pressAt = performance.now();
       setCompress(true, compressRef.current.latched);
     }
@@ -480,13 +573,13 @@ export function HoskyStarForm() {
     if (!g || phase !== "playing" || pausedRef.current) return;
     if (e.pointerType === "mouse") {
       const w = toWorld(e.clientX, e.clientY);
-      g.input.tx = w.x;
-      g.input.ty = w.y;
+      g.input.tx = Math.max(0, Math.min(WORLD_W, w.x));
+      g.input.ty = Math.max(0, Math.min(WORLD_H, w.y));
       return;
     }
     if (pointer.current.id !== e.pointerId) return;
     const rect = canvasRef.current!.getBoundingClientRect();
-    const k = WORLD_W / rect.width;
+    const k = 1 / fitView(rect.width, rect.height).scale;
     g.input.tx = Math.max(0, Math.min(WORLD_W, g.input.tx + (e.clientX - pointer.current.x) * k * 1.15));
     g.input.ty = Math.max(0, Math.min(WORLD_H, g.input.ty + (e.clientY - pointer.current.y) * k * 1.15));
     pointer.current.x = e.clientX;
@@ -582,8 +675,35 @@ export function HoskyStarForm() {
 
   return (
     <div className="mx-auto w-full select-none" style={{ maxWidth: "min(520px, max(280px, calc((100dvh - 330px) * 0.8)))" }}>
+      {/* Short phones: the playfield (and its Start button) can sit below the fold, so offer one up here. */}
+      {phase === "intro" && (
+        <div className="mb-2 hidden items-center justify-between gap-3 rounded-xl border border-electric/30 bg-electric/[0.06] px-3 py-2 [@media(max-height:760px)]:flex">
+          <p className="text-xs text-slate">Plays full screen · best <span className="font-mono text-white">{best}</span></p>
+          <button type="button" onClick={start} data-testid="sf-start-top" className="rounded-full bg-electric px-5 py-1.5 text-sm font-semibold text-navy">
+            Start
+          </button>
+        </div>
+      )}
+      <div
+        ref={stageRef}
+        data-sf-immersive={immersive ? "1" : "0"}
+        className={immersive ? "sf-imm fixed inset-0 z-[1000] flex flex-col bg-[#020617]" : ""}
+        style={
+          immersive
+            ? {
+                height: "100dvh",
+                width: "100vw",
+                paddingTop: "max(6px, env(safe-area-inset-top))",
+                paddingBottom: "max(8px, env(safe-area-inset-bottom))",
+                paddingLeft: "max(8px, env(safe-area-inset-left))",
+                paddingRight: "max(8px, env(safe-area-inset-right))",
+                overscrollBehavior: "none",
+              }
+            : undefined
+        }
+      >
       {/* HUD */}
-      <div className="mb-2 flex items-center justify-between gap-2">
+      <div className={`sf-hud mb-2 flex items-center justify-between gap-2 ${immersive ? "mx-auto w-full max-w-[560px] shrink-0 pr-11" : ""}`}>
         <Paws lives={phase === "playing" ? hud.lives : START_LIVES} />
         <div className="min-w-0 text-center">
           <p className="card-label leading-none">Distance</p>
@@ -605,7 +725,28 @@ export function HoskyStarForm() {
       </div>
 
       {/* Playfield */}
-      <div ref={wrapRef} className="relative w-full overflow-hidden rounded-2xl border border-white/15 bg-navy shadow-[0_0_40px_rgba(62,120,255,0.18)]" style={{ aspectRatio: `${WORLD_W} / ${WORLD_H}` }}>
+      {immersive && (
+        <button
+          type="button"
+          onClick={leaveFullView}
+          data-testid="sf-exit-full"
+          aria-label="Leave full screen (pauses the run)"
+          title="Leave full screen (pauses)"
+          className="absolute z-10 flex h-9 w-9 items-center justify-center rounded-full border border-white/20 bg-black/50 text-lg leading-none text-slate hover:text-white"
+          style={{ top: "max(10px, calc(env(safe-area-inset-top) + 4px))", right: "max(10px, calc(env(safe-area-inset-right) + 4px))" }}
+        >
+          ×
+        </button>
+      )}
+      <div
+        ref={wrapRef}
+        className={
+          immersive
+            ? "sf-wrap relative min-h-0 w-full flex-1 overflow-hidden"
+            : "relative w-full overflow-hidden rounded-2xl border border-white/15 bg-navy shadow-[0_0_40px_rgba(62,120,255,0.18)]"
+        }
+        style={immersive ? undefined : { aspectRatio: `${WORLD_W} / ${WORLD_H}` }}
+      >
         <canvas
           ref={canvasRef}
           data-testid="sf-canvas"
@@ -750,7 +891,7 @@ export function HoskyStarForm() {
       </div>
 
       {/* Current star readout */}
-      <div className="mt-2 flex items-center justify-between gap-2 text-xs" aria-live="off">
+      <div className={`sf-read mt-2 flex items-center justify-between gap-2 text-xs ${immersive ? "mx-auto w-full max-w-[560px] shrink-0" : ""}`} aria-live="off">
         <p className="text-slate-muted">
           Growing: <span className="font-mono font-semibold" style={{ color: typeSpec.color }}>{phase === "playing" ? hud.type : "–"}</span>
           {phase === "playing" && (
@@ -758,14 +899,21 @@ export function HoskyStarForm() {
           )}
         </p>
         {phase === "playing" && (
-          <button type="button" onClick={() => { pausedRef.current = !pausedRef.current; setPaused(pausedRef.current); }} className="rounded-full border border-white/15 px-3 py-1 text-slate hover:text-white">
-            {paused ? "Resume" : "Pause"}
-          </button>
+          <span className="flex shrink-0 gap-1.5">
+            {!immersive && (
+              <button type="button" onClick={enterImmersive} data-testid="sf-enter-full" className="rounded-full border border-white/15 px-3 py-1 text-slate hover:text-white">
+                Full screen
+              </button>
+            )}
+            <button type="button" onClick={() => { pausedRef.current = !pausedRef.current; setPaused(pausedRef.current); }} className="rounded-full border border-white/15 px-3 py-1 text-slate hover:text-white">
+              {paused ? "Resume" : "Pause"}
+            </button>
+          </span>
         )}
       </div>
 
       {/* Controls */}
-      <div className="mt-2 grid grid-cols-[1fr_1.5fr] gap-3">
+      <div className={`sf-ctrl mt-2 grid grid-cols-[1fr_1.5fr] gap-3 ${immersive ? "mx-auto w-full max-w-[560px] shrink-0" : ""}`}>
         <button
           type="button"
           data-testid="sf-compress"
@@ -775,7 +923,7 @@ export function HoskyStarForm() {
           onPointerUp={onCompressUp}
           onPointerCancel={onCompressUp}
           onContextMenu={(e) => e.preventDefault()}
-          className={`touch-none rounded-2xl border px-3 py-5 text-sm font-bold uppercase tracking-wide transition disabled:opacity-40 ${
+          className={`sf-btn-c touch-none rounded-2xl border px-3 ${immersive ? "py-3" : "py-5"} text-sm font-bold uppercase tracking-wide transition disabled:opacity-40 ${
             compressOn
               ? "border-electric bg-electric/25 text-electric shadow-[0_0_24px_rgba(62,207,255,0.35)]"
               : "border-white/20 bg-white/[0.05] text-slate"
@@ -795,7 +943,7 @@ export function HoskyStarForm() {
             detonate();
           }}
           onContextMenu={(e) => e.preventDefault()}
-          className={`touch-none rounded-2xl border-2 px-3 py-5 text-lg font-extrabold uppercase tracking-wider transition active:scale-[0.97] disabled:opacity-40 ${
+          className={`sf-btn-d touch-none rounded-2xl border-2 px-3 ${immersive ? "py-3" : "py-5"} text-lg font-extrabold uppercase tracking-wider transition active:scale-[0.97] disabled:opacity-40 ${
             hud.canDet
               ? "border-gold bg-gold/25 text-gold shadow-[0_0_28px_rgba(245,197,66,0.4)]"
               : "border-white/20 bg-white/[0.05] text-slate"
@@ -806,6 +954,7 @@ export function HoskyStarForm() {
             {hud.canDet ? `make ${hud.type} · boost ×${fmt(typeSpec.boost * hud.chain)}` : "gather more gas"}
           </span>
         </button>
+      </div>
       </div>
 
       {/* Star guide */}

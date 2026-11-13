@@ -720,16 +720,32 @@ function drawRemnant(ctx: CanvasRenderingContext2D, r: Remnant, g: StarForm, t: 
 
 export type DrawOpts = { width: number; height: number; dpr: number };
 
+/**
+ * How the fixed WORLD_W × WORLD_H arena sits in a canvas of `width` × `height` CSS px: scaled
+ * to fit ("contain") and centred. A bigger screen gets a bigger view of the same arena, never
+ * more room, so spawn rates, leashes and hazard density stay identical on every device.
+ */
+export function fitView(width: number, height: number) {
+  const scale = Math.max(0.01, Math.min(width / WORLD_W, height / WORLD_H));
+  return { scale, ox: (width - WORLD_W * scale) / 2, oy: (height - WORLD_H * scale) / 2 };
+}
+
 export function draw(ctx: CanvasRenderingContext2D, g: StarForm, fx: Fx, o: DrawOpts, type: SpectralId, progress: number) {
-  const sx = (o.width * o.dpr) / WORLD_W;
+  const view = fitView(o.width, o.height);
+  const sx = view.scale * o.dpr;
   const t = fx.time;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.fillStyle = "#020617";
   ctx.fillRect(0, 0, o.width * o.dpr, o.height * o.dpr);
   const sh = fx.reduced ? 0 : fx.shake;
-  const ox = sh ? (Math.random() - 0.5) * sh * o.dpr : 0;
-  const oy = sh ? (Math.random() - 0.5) * sh * o.dpr : 0;
+  const ox = view.ox * o.dpr + (sh ? (Math.random() - 0.5) * sh * o.dpr : 0);
+  const oy = view.oy * o.dpr + (sh ? (Math.random() - 0.5) * sh * o.dpr : 0);
   ctx.setTransform(sx, 0, 0, sx, ox, oy);
+  // visible area in world units (bigger than the arena when the screen's shape differs)
+  const ex0 = -view.ox / view.scale - 20;
+  const ey0 = -view.oy / view.scale - 20;
+  const ex1 = WORLD_W + view.ox / view.scale + 20;
+  const ey1 = WORLD_H + view.oy / view.scale + 20;
 
   // ---- deep space + Milky Way band, scrolling slowly past
   const bg = ctx.createLinearGradient(0, 0, 0, WORLD_H);
@@ -737,14 +753,21 @@ export function draw(ctx: CanvasRenderingContext2D, g: StarForm, fx: Fx, o: Draw
   bg.addColorStop(0.55, "#0a0926");
   bg.addColorStop(1, "#140926");
   ctx.fillStyle = bg;
-  ctx.fillRect(-20, -20, WORLD_W + 40, WORLD_H + 40);
+  ctx.fillRect(ex0, ey0, ex1 - ex0, ey1 - ey0);
   if (fx.milky) {
     const off = (fx.travel * 9) % TILE_WORLD_H;
     ctx.globalAlpha = 0.95;
-    ctx.drawImage(fx.milky, 0, off, WORLD_W, TILE_WORLD_H);
-    ctx.drawImage(fx.milky, 0, off - TILE_WORLD_H, WORLD_W, TILE_WORLD_H);
+    // the band fills the whole screen; tiles repeat to cover any extra height
+    for (let y = off - TILE_WORLD_H * Math.ceil((off - ey0) / TILE_WORLD_H); y < ey1; y += TILE_WORLD_H) {
+      ctx.drawImage(fx.milky, ex0, y, ex1 - ex0, TILE_WORLD_H);
+    }
     ctx.globalAlpha = 1;
   }
+  // star copies needed to fill the screen around the arena
+  const kx0 = Math.floor(ex0 / WORLD_W);
+  const kx1 = Math.floor(ex1 / WORLD_W);
+  const ky0 = Math.floor(ey0 / WORLD_H);
+  const ky1 = Math.floor(ey1 / WORLD_H);
 
   // ---- parallax star layers (near ones streak with speed)
   for (let li = 0; li < fx.layers.length; li++) {
@@ -756,8 +779,15 @@ export function draw(ctx: CanvasRenderingContext2D, g: StarForm, fx: Fx, o: Draw
       const a = L.alpha * (0.6 + 0.4 * Math.sin(t * (0.8 + li * 0.5) + s.tw));
       ctx.fillStyle =
         s.hue < 0.12 ? `rgba(255,214,170,${a})` : s.hue < 0.25 ? `rgba(170,205,255,${a})` : `rgba(235,242,255,${a})`;
-      if (streak) ctx.fillRect(s.x, y - streak, L.size * 0.7, L.size + streak);
-      else ctx.fillRect(s.x, y, L.size, L.size);
+      for (let kx = kx0; kx <= kx1; kx++) {
+        for (let ky = ky0; ky <= ky1; ky++) {
+          const px = s.x + kx * WORLD_W;
+          const py = y + ky * WORLD_H;
+          if (px < ex0 || px > ex1 || py < ey0 - streak || py > ey1) continue;
+          if (streak) ctx.fillRect(px, py - streak, L.size * 0.7, L.size + streak);
+          else ctx.fillRect(px, py, L.size, L.size);
+        }
+      }
     }
   }
 
@@ -769,6 +799,15 @@ export function draw(ctx: CanvasRenderingContext2D, g: StarForm, fx: Fx, o: Draw
     vg.addColorStop(1, `rgba(120,170,255,${0.22 * k})`);
     ctx.fillStyle = vg;
     ctx.fillRect(0, 0, WORLD_W, WORLD_H);
+  }
+
+  // dim the space outside the arena a little so the play area reads clearly
+  if (ex0 < -21 || ey0 < -21) {
+    ctx.fillStyle = "rgba(2,6,23,0.38)";
+    ctx.fillRect(ex0, ey0, ex1 - ex0, -ey0);
+    ctx.fillRect(ex0, WORLD_H, ex1 - ex0, ey1 - WORLD_H);
+    ctx.fillRect(ex0, 0, -ex0, WORLD_H);
+    ctx.fillRect(WORLD_W, 0, ex1 - WORLD_W, WORLD_H);
   }
 
   // arena frame
