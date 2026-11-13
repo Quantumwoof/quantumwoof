@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import { DISTANCE_TEACH, OBSTACLE_TEACH, STAR_FORM_INTRO, STAR_FORM_NOTE, STAR_FORM_TRAVEL, STAR_TEACH } from "@/content/starForm";
 import {
@@ -135,7 +136,6 @@ export function HoskyStarForm() {
   }, [immersive]);
   const hudRef = useRef<HTMLDivElement>(null);
   const ctrlRef = useRef<HTMLDivElement>(null);
-  const exitImmersiveRef = useRef<() => void>(() => {});
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const gameRef = useRef<StarForm | null>(null);
   const fxRef = useRef<Fx | null>(null);
@@ -276,8 +276,7 @@ export function HoskyStarForm() {
       setSummary(s);
       setPost("idle");
       setPostMsg("");
-      setPhase("over");
-      exitImmersiveRef.current();
+      setPhase("over"); // results show right here (still full screen) until the player leaves
       loadBoard();
     },
     [loadBoard],
@@ -296,19 +295,18 @@ export function HoskyStarForm() {
   }, []);
 
   // A new service worker takes over (skipWaiting + clientsClaim): reload onto the fresh game
-  // code, but never mid-run — wait until the run ends.
+  // code only before the first run. Once a run has started we never reload by ourselves — that
+  // used to wipe the results screen (and the top-3 entry) at game over; the next visit gets the
+  // new code anyway.
   const phaseRef = useRef(phase);
-  const swPendingRef = useRef(false);
   useEffect(() => {
     phaseRef.current = phase;
-    if (phase !== "playing" && swPendingRef.current) window.location.reload();
   }, [phase]);
   useEffect(() => {
     const sw = typeof navigator !== "undefined" ? navigator.serviceWorker : undefined;
     if (!sw || !sw.controller) return; // first install: nothing stale to replace
     const onChange = () => {
-      if (phaseRef.current === "playing") swPendingRef.current = true;
-      else window.location.reload();
+      if (phaseRef.current === "intro") window.location.reload();
     };
     sw.addEventListener("controllerchange", onChange);
     return () => sw.removeEventListener("controllerchange", onChange);
@@ -364,10 +362,6 @@ export function HoskyStarForm() {
       document.removeEventListener("webkitfullscreenchange", onFs);
     };
   }, [leaveFullView]);
-  // Run over: drop back to the page so the result, leaderboard and star guide read normally.
-  useEffect(() => {
-    exitImmersiveRef.current = exitImmersive;
-  }, [exitImmersive]);
   // position:fixed is trapped by any ancestor with transform / filter / backdrop-filter /
   // contain / will-change (the page's .bento-card has backdrop-filter + isolation), which made
   // the "full screen" overlay a box inside the card wherever the Fullscreen API isn't granted
@@ -413,7 +407,7 @@ export function HoskyStarForm() {
     const mine = process.env.NEXT_PUBLIC_BUILD_ID;
     if (!mine || mine === "dev") return;
     const check = () => {
-      if (phaseRef.current === "playing") return;
+      if (phaseRef.current !== "intro") return; // only before the first run (never wipe results)
       fetch("/api/version", { cache: "no-store" })
         .then((r) => r.json())
         .then((d: { build?: string }) => {
@@ -791,7 +785,7 @@ export function HoskyStarForm() {
       {/* Short phones: the playfield (and its Start button) can sit below the fold, so offer one up here. */}
       {phase === "intro" && (
         <div className="mb-2 hidden items-center justify-between gap-3 rounded-xl border border-electric/30 bg-electric/[0.06] px-3 py-2 [@media(max-height:760px)]:flex">
-          <p className="text-xs text-slate">Plays full screen · best <span className="font-mono text-white">{best}</span></p>
+          <p className="text-xs text-slate">Plays full screen · best distance <span className="whitespace-nowrap font-mono text-white" data-testid="sf-best-top">{best > 0 ? formatDistance(best).text : "—"}</span></p>
           <button type="button" onClick={start} data-testid="sf-start-top" className="rounded-full bg-electric px-5 py-1.5 text-sm font-semibold text-navy">
             Start
           </button>
@@ -808,7 +802,7 @@ export function HoskyStarForm() {
         ref={hudRef}
         className={
           immersive
-            ? "pointer-events-none absolute inset-x-0 top-0 z-10 flex items-start justify-between gap-2 bg-gradient-to-b from-[#020617]/80 via-[#020617]/40 to-transparent pb-6 [text-shadow:0_1px_3px_rgba(0,0,0,0.9)]"
+            ? `pointer-events-none absolute inset-x-0 top-0 z-10 ${phase === "over" ? "hidden" : "flex"} items-start justify-between gap-2 bg-gradient-to-b from-[#020617]/80 via-[#020617]/40 to-transparent pb-6 [text-shadow:0_1px_3px_rgba(0,0,0,0.9)]`
             : "mb-2 flex items-center justify-between gap-2"
         }
         style={
@@ -842,7 +836,7 @@ export function HoskyStarForm() {
       </div>
 
       {/* Playfield */}
-      {immersive && (
+      {immersive && phase !== "over" && (
         <button
           type="button"
           onClick={leaveFullView}
@@ -894,7 +888,7 @@ export function HoskyStarForm() {
             </ul>
             <TopBoard top={top} available={boardOk} />
             <div className="sticky bottom-0 -mx-4 -mb-4 mt-auto flex items-center justify-between gap-3 bg-navy px-4 py-3">
-              <p className="text-xs text-slate-muted">Your best: <span className="font-mono text-white">{best}</span></p>
+              <p className="text-xs text-slate-muted">Your best distance: <span className="whitespace-nowrap font-mono text-white" data-testid="sf-best">{best > 0 ? formatDistance(best).text : "none yet"}</span></p>
               <button type="button" onClick={start} data-testid="sf-start" className="rounded-full bg-electric px-6 py-2.5 text-sm font-semibold text-navy transition hover:bg-white">
                 Start
               </button>
@@ -922,21 +916,77 @@ export function HoskyStarForm() {
         )}
 
         {phase === "over" && summary && (
-          <div className="absolute inset-0 flex flex-col gap-3 overflow-y-auto bg-navy/90 p-4 backdrop-blur-sm" data-testid="sf-over">
+          <div
+            className={`absolute inset-0 z-20 flex flex-col gap-3 overflow-y-auto bg-navy/90 p-4 backdrop-blur-sm ${immersive ? "mx-auto max-w-[560px] bg-navy/95" : ""}`}
+            style={
+              immersive
+                ? {
+                    paddingTop: "max(16px, calc(env(safe-area-inset-top) + 8px))",
+                    paddingLeft: "max(16px, env(safe-area-inset-left))",
+                    paddingRight: "max(16px, env(safe-area-inset-right))",
+                  }
+                : undefined
+            }
+            data-testid="sf-over"
+          >
             <div className="flex items-end justify-between gap-3">
               <div className="shrink-0">
-                <p className="card-label text-lavender">Run over</p>
+                <p className="card-label text-lavender">Run over · distance</p>
                 <p className="font-mono text-3xl font-semibold leading-tight text-white" data-testid="sf-final">
                   {formatDistance(summary.distance).value}
                   <span className="ml-1.5 whitespace-nowrap text-sm font-medium text-electric-dim">{formatDistance(summary.distance).unit}</span>
                 </p>
               </div>
-              <p className="min-w-0 shrink pb-1 text-right text-xs text-slate-muted">
-                {newBest ? <span className="text-gold">New personal best!</span> : <>Best: <span className="font-mono text-white">{formatDistance(best).text}</span></>}
+              <div className="min-w-0 shrink pb-1 text-right text-xs text-slate-muted">
+                {newBest ? (
+                  <span className="inline-block rounded-full bg-gold px-2.5 py-0.5 text-xs font-bold text-navy" data-testid="sf-newbest">New best!</span>
+                ) : (
+                  <>Your best: <span className="whitespace-nowrap font-mono text-white">{formatDistance(best).text}</span></>
+                )}
                 <br />
-                {Math.round(summary.durationSec)}s · {summary.detonations.length} stars made · {summary.kills} hazards destroyed
-              </p>
+                {Math.round(summary.durationSec)}s · {summary.detonations.length} {summary.detonations.length === 1 ? "star" : "stars"} · {summary.kills} {summary.kills === 1 ? "hazard" : "hazards"}
+              </div>
             </div>
+            <p className="-mt-1 text-sm text-slate" data-testid="sf-beststar">
+              Best star:{" "}
+              {topType ? (
+                <>
+                  <span className="font-mono font-semibold" style={{ color: SPECTRAL[topType].color }}>{topType}</span> · {STAR_TEACH[topType].name}
+                </>
+              ) : (
+                <span className="text-slate-muted">none made this run</span>
+              )}
+            </p>
+
+            <TopBoard top={top} available={boardOk} highlightDistance={post === "done" ? summary.distance : undefined} />
+
+            {qualifies && post !== "done" && post !== "lost" && (
+              <form onSubmit={submitScore} className="rounded-xl border border-gold/40 bg-gold/[0.06] p-3" data-testid="sf-name-form">
+                <p className="text-sm font-semibold text-gold">That run makes the all-time top 3!</p>
+                <div className="mt-2 flex gap-2">
+                  <input
+                    value={name}
+                    onChange={(e) => setName(e.target.value.replace(/[^\p{L}\p{N} _.\-]/gu, "").slice(0, LB.nameMax))}
+                    maxLength={LB.nameMax}
+                    placeholder="Display name"
+                    aria-label="Display name for the top 3 board"
+                    className="min-w-0 flex-1 rounded-lg border border-white/20 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-gold"
+                  />
+                  <button
+                    type="submit"
+                    disabled={post === "sending" || !name.trim()}
+                    className="rounded-lg bg-gold px-4 py-2 text-sm font-semibold text-navy disabled:opacity-50"
+                  >
+                    {post === "sending" ? "Posting…" : "Post"}
+                  </button>
+                </div>
+                <p className="mt-1 text-[0.7rem] text-slate-muted">Up to {LB.nameMax} letters/numbers. Shown publicly.</p>
+                {post === "error" && <p className="mt-1 text-xs text-red-300">{postMsg}</p>}
+              </form>
+            )}
+            {(post === "done" || post === "lost") && (
+              <p className={`text-sm ${post === "done" ? "text-gold" : "text-slate"}`}>{postMsg}</p>
+            )}
 
             <div className="rounded-xl border border-white/10 bg-black/30 p-3">
               <p className="card-label mb-2">Stars made</p>
@@ -970,37 +1020,17 @@ export function HoskyStarForm() {
               </p>
             )}
 
-            <TopBoard top={top} available={boardOk} highlightDistance={post === "done" ? summary.distance : undefined} />
-
-            {qualifies && post !== "done" && post !== "lost" && (
-              <form onSubmit={submitScore} className="rounded-xl border border-gold/40 bg-gold/[0.06] p-3" data-testid="sf-name-form">
-                <p className="text-sm font-semibold text-gold">That run makes the all-time top 3!</p>
-                <div className="mt-2 flex gap-2">
-                  <input
-                    value={name}
-                    onChange={(e) => setName(e.target.value.replace(/[^\p{L}\p{N} _.\-]/gu, "").slice(0, LB.nameMax))}
-                    maxLength={LB.nameMax}
-                    placeholder="Display name"
-                    aria-label="Display name for the top 3 board"
-                    className="min-w-0 flex-1 rounded-lg border border-white/20 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-gold"
-                  />
-                  <button
-                    type="submit"
-                    disabled={post === "sending" || !name.trim()}
-                    className="rounded-lg bg-gold px-4 py-2 text-sm font-semibold text-navy disabled:opacity-50"
-                  >
-                    {post === "sending" ? "Posting…" : "Post"}
-                  </button>
-                </div>
-                <p className="mt-1 text-[0.7rem] text-slate-muted">Up to {LB.nameMax} letters/numbers. Shown publicly.</p>
-                {post === "error" && <p className="mt-1 text-xs text-red-300">{postMsg}</p>}
-              </form>
-            )}
-            {(post === "done" || post === "lost") && (
-              <p className={`text-sm ${post === "done" ? "text-gold" : "text-slate"}`}>{postMsg}</p>
-            )}
-
-            <div className="sticky bottom-0 -mx-4 -mb-4 mt-auto flex justify-end bg-navy px-4 py-3">
+            <div
+              className="sticky bottom-0 -mx-4 -mb-4 mt-auto flex items-center justify-between gap-3 bg-navy px-4 py-3"
+              style={immersive ? { paddingBottom: "max(12px, env(safe-area-inset-bottom))" } : undefined}
+            >
+              {immersive ? (
+                <button type="button" onClick={exitImmersive} data-testid="sf-back" className="rounded-full border border-white/20 px-4 py-2.5 text-sm text-slate hover:text-white">
+                  Back to page
+                </button>
+              ) : (
+                <Link href="/" className="text-sm text-electric hover:underline">Back to the garden</Link>
+              )}
               <button type="button" onClick={start} data-testid="sf-again" className="rounded-full bg-electric px-6 py-2.5 text-sm font-semibold text-navy transition hover:bg-white">
                 Play again
               </button>
@@ -1014,7 +1044,7 @@ export function HoskyStarForm() {
         ref={ctrlRef}
         className={
           immersive
-            ? "pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-[#020617]/70 via-[#020617]/25 to-transparent pt-6"
+            ? `pointer-events-none absolute inset-x-0 bottom-0 z-10 ${phase === "over" ? "hidden" : ""} bg-gradient-to-t from-[#020617]/70 via-[#020617]/25 to-transparent pt-6`
             : ""
         }
         style={
