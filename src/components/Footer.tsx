@@ -14,6 +14,13 @@ export function Footer() {
             Privacy
           </Link>
           {" · "}
+          <Link
+            href="/terms"
+            className="inline-flex min-h-6 items-center text-electric transition hover:text-white"
+          >
+            Terms
+          </Link>
+          {" · "}
           <a
             href={`mailto:${site.contact.email}`}
             className="inline-flex min-h-6 items-center text-electric transition hover:text-white"

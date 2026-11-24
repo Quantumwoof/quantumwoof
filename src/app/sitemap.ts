@@ -24,5 +24,6 @@ export default function sitemap(): MetadataRoute.Sitemap {
     page("/notes", 0.6),
     ...notes.map((n) => page(`/notes/${n.slug}`, 0.5, "monthly", n.date)),
     page("/privacy", 0.2, "yearly"),
+    page("/terms", 0.2, "yearly"),
   ];
 }

@@ -80,6 +80,10 @@ export default function PrivacyPage() {
           >
             hello@quantumwoof.io
           </a>
+          . House rules are on the{" "}
+          <Link href="/terms" className="text-electric underline-offset-2 hover:underline">
+            terms page
+          </Link>
           . Back to{" "}
           <Link href="/school" className="text-electric underline-offset-2 hover:underline">
             Woof School

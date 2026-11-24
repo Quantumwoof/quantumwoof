@@ -22,6 +22,7 @@ describe("SEO routes", () => {
     expect(urls).toContain("https://www.quantumwoof.io/play/star-form");
     expect(urls).not.toContain("https://www.quantumwoof.io/play");
     expect(urls).toContain("https://www.quantumwoof.io/privacy");
+    expect(urls).toContain("https://www.quantumwoof.io/terms");
     for (const t of schoolTopics) {
       expect(urls.includes(`https://www.quantumwoof.io/school/${t.slug}`)).toBe(t.status === "ready");
     }
